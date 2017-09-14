@@ -35,10 +35,12 @@ public final class DartSuperAccessorsPassTest extends CompilerTestCase {
       "[method]()", "*[generator]()", "get [prop]()", "set [prop](v)");
 
   private PropertyRenamingPolicy propertyRenaming;
+
   @Override
-  public void setUp() {
+  protected void setUp() throws Exception {
+    super.setUp();
     setAcceptedLanguage(LanguageMode.ECMASCRIPT_2015);
-    runTypeCheckAfterProcessing = true;
+    enableRunTypeCheckAfterProcessing();
     propertyRenaming = PropertyRenamingPolicy.ALL_UNQUOTED;
   }
 
@@ -48,7 +50,7 @@ public final class DartSuperAccessorsPassTest extends CompilerTestCase {
   }
 
   @Override
-  NoninjectingCompiler getLastCompiler() {
+  protected NoninjectingCompiler getLastCompiler() {
     return (NoninjectingCompiler) super.getLastCompiler();
   }
 

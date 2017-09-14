@@ -422,7 +422,7 @@ final class RescopeGlobalSymbols implements CompilerPass {
       }
       Node windowPropAccess = IR.getprop(IR.name(WINDOW), IR.string(name));
       if (parent.isVar() && nameNode.hasOneChild()) {
-        Node assign = IR.assign(windowPropAccess, nameNode.getFirstChild().detachFromParent());
+        Node assign = IR.assign(windowPropAccess, nameNode.removeFirstChild());
         assign.setJSDocInfo(parent.getJSDocInfo());
         parent.replaceChild(nameNode, assign.srcrefTree(parent));
       } else {
@@ -522,6 +522,7 @@ final class RescopeGlobalSymbols implements CompilerPass {
       }
       // Remove the var node.
       parent.removeChild(n);
+      NodeUtil.markFunctionsDeleted(n, compiler);
       compiler.reportChangeToEnclosingScope(parent);
     }
 

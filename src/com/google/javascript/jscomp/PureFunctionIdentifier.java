@@ -16,6 +16,9 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -69,6 +72,11 @@ class PureFunctionIdentifier implements CompilerPass {
   private final AbstractCompiler compiler;
   private final DefinitionProvider definitionProvider;
 
+  /**
+   * A constant key for checking/marking whether this pass has run yet in a given compiler instance.
+   */
+  private static final String HAS_RUN_PURE_FUNCTION_IDENTIFIER = "hasRunPureFunctionIdentifier";
+
   /** Map of function names to side effect gathering representative nodes */
   private final Map<String, FunctionInformation> functionInfoByName = new HashMap<>();
 
@@ -102,7 +110,7 @@ class PureFunctionIdentifier implements CompilerPass {
   private Node root;
 
   public PureFunctionIdentifier(AbstractCompiler compiler, DefinitionProvider definitionProvider) {
-    this.compiler = Preconditions.checkNotNull(compiler);
+    this.compiler = checkNotNull(compiler);
     this.definitionProvider = definitionProvider;
     this.functionSideEffectMap = ArrayListMultimap.create();
     this.allFunctionCalls = new ArrayList<>();
@@ -112,7 +120,7 @@ class PureFunctionIdentifier implements CompilerPass {
 
   @Override
   public void process(Node externsAst, Node srcAst) {
-    Preconditions.checkState(
+    checkState(
         externs == null && root == null,
         "It is illegal to call PureFunctionIdentifier.process  twice the same instance.  Please "
             + " use a new PureFunctionIdentifier instance each time.");
@@ -140,14 +148,10 @@ class PureFunctionIdentifier implements CompilerPass {
    */
   @VisibleForTesting
   String getDebugReport() {
-    Preconditions.checkNotNull(externs);
-    Preconditions.checkNotNull(root);
+    checkNotNull(externs);
+    checkNotNull(root);
 
     StringBuilder sb = new StringBuilder();
-
-    FunctionNames functionNames = new FunctionNames(compiler);
-    functionNames.process(null, externs);
-    functionNames.process(null, root);
 
     for (Node call : allFunctionCalls) {
       sb.append("  ");
@@ -232,7 +236,7 @@ class PureFunctionIdentifier implements CompilerPass {
   }
 
   private Iterable<Node> getGoogCacheCallableExpression(Cache cacheCall) {
-    Preconditions.checkNotNull(cacheCall);
+    checkNotNull(cacheCall);
 
     if (cacheCall.keyFn == null) {
       return unwrapCallableExpression(cacheCall.valueFn);
@@ -242,7 +246,7 @@ class PureFunctionIdentifier implements CompilerPass {
   }
 
   private List<FunctionInformation> getSideEffectsForCall(Node call) {
-    Preconditions.checkArgument(call.isCall() || call.isNew());
+    checkArgument(call.isCall() || call.isNew());
 
     Iterable<Node> expanded;
     Cache cacheCall = compiler.getCodingConvention().describeCachingCall(call);
@@ -262,7 +266,7 @@ class PureFunctionIdentifier implements CompilerPass {
         // getFunctionDefinitions() will only be called on the first
         // child of a call and thus the function expression
         // definition will never be an extern.
-        results.addAll(Preconditions.checkNotNull(functionSideEffectMap.get(expression)));
+        results.addAll(checkNotNull(functionSideEffectMap.get(expression)));
         continue;
       }
 
@@ -297,9 +301,9 @@ class PureFunctionIdentifier implements CompilerPass {
       Definition definition = site.definition;
       if (definition.getLValue() != null) {
         Node getOrName = definition.getLValue();
-        Preconditions.checkArgument(getOrName.isGetProp() || getOrName.isName(), getOrName);
+        checkArgument(getOrName.isGetProp() || getOrName.isName(), getOrName);
         String name = NameBasedDefinitionProvider.getSimplifiedName(getOrName);
-        Preconditions.checkNotNull(name);
+        checkNotNull(name);
         if (isSupportedFunctionDefinition(definition.getRValue())) {
           addSupportedDefinition(site, name);
         } else {
@@ -378,7 +382,7 @@ class PureFunctionIdentifier implements CompilerPass {
       } else {
         flags.clearAllFlags();
         for (FunctionInformation functionInfo : possibleSideEffects) {
-          Preconditions.checkNotNull(functionInfo);
+          checkNotNull(functionInfo);
           if (functionInfo.mutatesGlobalState()) {
             flags.setMutatesGlobalState();
           }
@@ -480,7 +484,7 @@ class PureFunctionIdentifier implements CompilerPass {
       }
 
       for (FunctionInformation sideEffectInfo : functionSideEffectMap.get(enclosingFunction)) {
-        Preconditions.checkNotNull(sideEffectInfo);
+        checkNotNull(sideEffectInfo);
         updateSideEffectsForNode(sideEffectInfo, traversal, node, enclosingFunction);
       }
     }
@@ -498,7 +502,7 @@ class PureFunctionIdentifier implements CompilerPass {
       } else if (node.isName()) {
         // Variable definition are not side effects. Check that the name appears in the context of a
         // variable declaration.
-        Preconditions.checkArgument(NodeUtil.isNameDeclaration(node.getParent()));
+        checkArgument(NodeUtil.isNameDeclaration(node.getParent()));
         Node value = node.getFirstChild();
         // Assignment to local, if the value isn't a safe local value,
         // new object creation or literal or known primitive result
@@ -511,6 +515,10 @@ class PureFunctionIdentifier implements CompilerPass {
       } else if (node.isThrow()) {
         sideEffectInfo.setFunctionThrows();
       } else if (node.isReturn()) {
+        if (node.hasChildren() && !NodeUtil.evaluatesToLocalValue(node.getFirstChild())) {
+          sideEffectInfo.setTaintsReturn();
+        }
+      } else if (node.isYield()) {
         if (node.hasChildren() && !NodeUtil.evaluatesToLocalValue(node.getFirstChild())) {
           sideEffectInfo.setTaintsReturn();
         }
@@ -613,7 +621,7 @@ class PureFunctionIdentifier implements CompilerPass {
 
           // Note: other ops result in the name or prop being assigned a local
           // value (x++ results in a number, for instance)
-          Preconditions.checkState(NodeUtil.isAssignmentOp(op) || isIncDec(op) || op.isDelProp());
+          checkState(NodeUtil.isAssignmentOp(op) || isIncDec(op) || op.isDelProp());
           Node rhs = op.getLastChild();
           if (rhs != null && op.isAssign() && !NodeUtil.evaluatesToLocalValue(rhs)) {
             blacklistedVarsByFunction.put(enclosingFunction, var);
@@ -687,7 +695,7 @@ class PureFunctionIdentifier implements CompilerPass {
 
     private CallSitePropagationInfo(
         boolean allArgsUnescapedLocal, boolean calleeThisEqualsCallerThis, Token callType) {
-      Preconditions.checkArgument(callType == Token.CALL || callType == Token.NEW);
+      checkArgument(callType == Token.CALL || callType == Token.NEW);
       this.allArgsUnescapedLocal = allArgsUnescapedLocal;
       this.calleeThisEqualsCallerThis = calleeThisEqualsCallerThis;
       this.callType = callType;
@@ -748,7 +756,7 @@ class PureFunctionIdentifier implements CompilerPass {
     }
 
     static CallSitePropagationInfo computePropagationType(Node callSite) {
-      Preconditions.checkArgument(callSite.isCall() || callSite.isNew());
+      checkArgument(callSite.isCall() || callSite.isNew());
 
       boolean thisIsOuterThis = false;
       if (callSite.isCall()) {
@@ -899,8 +907,8 @@ class PureFunctionIdentifier implements CompilerPass {
 
     /** Update function for @nosideeffects annotations. */
     private void updateSideEffectsFromExtern(Node externFunction, AbstractCompiler compiler) {
-      Preconditions.checkArgument(externFunction.isFunction());
-      Preconditions.checkArgument(externFunction.isFromExterns());
+      checkArgument(externFunction.isFunction());
+      checkArgument(externFunction.isFromExterns());
 
       JSDocInfo info = NodeUtil.getBestJSDocInfo(externFunction);
       // Handle externs.
@@ -939,12 +947,17 @@ class PureFunctionIdentifier implements CompilerPass {
    * @return Whether the jstype is something known to be a local value.
    */
   private static boolean isLocalValueType(TypeI typei, AbstractCompiler compiler) {
-    Preconditions.checkNotNull(typei);
+    checkNotNull(typei);
     TypeI nativeObj = compiler.getTypeIRegistry().getNativeType(JSTypeNative.OBJECT_TYPE);
     TypeI subtype = typei.meetWith(nativeObj);
     // If the type includes anything related to a object type, don't assume
     // anything about the locality of the value.
     return subtype.isBottom();
+  }
+
+  /** Returns whether this pass has run yet in a given compiler instance. */
+  static boolean hasRunPureFunctionIdentifier(AbstractCompiler compiler) {
+    return Boolean.TRUE.equals(compiler.getAnnotation(HAS_RUN_PURE_FUNCTION_IDENTIFIER));
   }
 
   /**
@@ -954,6 +967,7 @@ class PureFunctionIdentifier implements CompilerPass {
   static class Driver implements CompilerPass {
     private final AbstractCompiler compiler;
     private final String reportPath;
+    protected boolean checkJ2cl = true;
 
     Driver(AbstractCompiler compiler, String reportPath) {
       this.compiler = compiler;
@@ -962,6 +976,16 @@ class PureFunctionIdentifier implements CompilerPass {
 
     @Override
     public void process(Node externs, Node root) {
+      // Don't run the independent PureFunctionIdentifier pass if J2CL is enabled, since nested
+      // PureFunctionIdentifier passes will run redundantly inside of J2CL.
+      if (checkJ2cl && J2clSourceFileChecker.shouldRunJ2clPasses(compiler)) {
+        return;
+      }
+
+      if (!hasRunPureFunctionIdentifier(compiler)) {
+        compiler.setAnnotation(HAS_RUN_PURE_FUNCTION_IDENTIFIER, Boolean.TRUE);
+      }
+
       NameBasedDefinitionProvider defFinder = new NameBasedDefinitionProvider(compiler, true);
       defFinder.process(externs, root);
 
@@ -976,6 +1000,15 @@ class PureFunctionIdentifier implements CompilerPass {
           throw new RuntimeException(e);
         }
       }
+    }
+  }
+
+  /** A driver that will run even when J2CL is enabled. */
+  static class DriverInJ2cl extends Driver {
+
+    DriverInJ2cl(AbstractCompiler compiler, String reportPath) {
+      super(compiler, reportPath);
+      checkJ2cl = false;
     }
   }
 }

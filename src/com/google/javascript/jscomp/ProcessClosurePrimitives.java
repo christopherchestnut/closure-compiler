@@ -16,6 +16,10 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
@@ -226,17 +230,34 @@ class ProcessClosurePrimitives extends AbstractPostOrderCallback
     }
   }
 
+  private Node getAnyValueOfType(JSDocInfo jsdoc) {
+    checkArgument(jsdoc.hasType());
+    Node typeAst = jsdoc.getType().getRoot();
+    checkState(typeAst.isString());
+    switch (typeAst.getString()) {
+      case "boolean":
+        return IR.falseNode();
+      case "string":
+        return IR.string("");
+      case "number":
+        return IR.number(0);
+      default:
+        throw new RuntimeException(typeAst.getString());
+    }
+  }
+
   /**
    * @param n
    */
   private void replaceGoogDefines(Node n) {
     Node parent = n.getParent();
-    Preconditions.checkState(parent.isExprResult());
+    checkState(parent.isExprResult());
     String name = n.getSecondChild().getString();
-    Node value = n.isFromExterns() ? null : n.getChildAtIndex(2).detach();
+    JSDocInfo jsdoc = n.getJSDocInfo();
+    Node value =
+        n.isFromExterns() ? getAnyValueOfType(jsdoc).srcref(n) : n.getChildAtIndex(2).detach();
 
-    Node replacement = NodeUtil.newQNameDeclaration(
-        compiler, name, value, n.getJSDocInfo());
+    Node replacement = NodeUtil.newQNameDeclaration(compiler, name, value, jsdoc);
     replacement.useSourceInfoIfMissingFromForTree(parent);
     parent.replaceWith(replacement);
     compiler.reportChangeToEnclosingScope(replacement);
@@ -371,8 +392,11 @@ class ProcessClosurePrimitives extends AbstractPostOrderCallback
 
   private boolean validPrimitiveCall(NodeTraversal t, Node n) {
     if (!n.getParent().isExprResult() || !t.inGlobalHoistScope()) {
-      compiler.report(t.makeError(n, INVALID_CLOSURE_CALL_ERROR));
-      return false;
+      // Ignore invalid primitives if we didn't strip module sugar.
+      if (!compiler.getOptions().shouldPreserveGoogModule()) {
+        compiler.report(t.makeError(n, INVALID_CLOSURE_CALL_ERROR));
+        return false;
+      }
     }
     return true;
   }
@@ -426,7 +450,7 @@ class ProcessClosurePrimitives extends AbstractPostOrderCallback
         JSModule providedModule = provided.explicitModule;
 
         if (!provided.isFromExterns()) {
-          Preconditions.checkNotNull(providedModule, n);
+          checkNotNull(providedModule, n);
 
           JSModule module = t.getModule();
           if (moduleGraph != null
@@ -458,7 +482,7 @@ class ProcessClosurePrimitives extends AbstractPostOrderCallback
    * Handles a goog.provide call.
    */
   private void processProvideCall(NodeTraversal t, Node n, Node parent) {
-    Preconditions.checkState(n.isCall());
+    checkState(n.isCall());
     Node left = n.getFirstChild();
     Node arg = left.getNext();
     if (verifyProvide(t, left, arg)) {
@@ -512,8 +536,8 @@ class ProcessClosurePrimitives extends AbstractPostOrderCallback
     JSDocInfo info = n.getFirstChild().getJSDocInfo();
     boolean hasStubDefinition = info != null && (n.isFromExterns() || info.hasTypedefType());
     if (hasStubDefinition) {
-      String name = n.getFirstChild().getQualifiedName();
-      if (name != null) {
+      if (n.getFirstChild().isQualifiedName()) {
+        String name = n.getFirstChild().getQualifiedName();
         ProvidedName pn = providedNames.get(name);
         if (pn != null) {
           n.putBooleanProp(Node.WAS_PREVIOUSLY_PROVIDED, true);
@@ -1292,8 +1316,8 @@ class ProcessClosurePrimitives extends AbstractPostOrderCallback
      */
     void addProvide(Node node, JSModule module, boolean explicit) {
       if (explicit) {
-        Preconditions.checkState(explicitNode == null);
-        Preconditions.checkArgument(node.isExprResult());
+        checkState(explicitNode == null);
+        checkArgument(node.isExprResult());
         explicitNode = node;
         explicitModule = module;
       }
@@ -1319,7 +1343,7 @@ class ProcessClosurePrimitives extends AbstractPostOrderCallback
           node.isExprResult() // assign
               || node.isFunction()
               || NodeUtil.isNameDeclaration(node));
-      Preconditions.checkArgument(explicitNode != node);
+      checkArgument(explicitNode != node);
       if ((candidateDefinition == null) || !node.isExprResult()) {
         candidateDefinition = node;
         updateMinimumModule(module);
@@ -1335,8 +1359,7 @@ class ProcessClosurePrimitives extends AbstractPostOrderCallback
       } else {
         // If there is no module graph, then there must be exactly one
         // module in the program.
-        Preconditions.checkState(newModule == minimumModule,
-                                 "Missing module graph");
+        checkState(newModule == minimumModule, "Missing module graph");
       }
     }
 
@@ -1419,8 +1442,8 @@ class ProcessClosurePrimitives extends AbstractPostOrderCallback
             // Add it after the parent namespace.
             ProvidedName parentName =
                 providedNames.get(namespace.substring(0, indexOfDot));
-            Preconditions.checkNotNull(parentName);
-            Preconditions.checkNotNull(parentName.replacementNode);
+            checkNotNull(parentName);
+            checkNotNull(parentName.replacementNode);
             parentName.replacementNode.getParent().addChildAfter(
                 replacementNode, parentName.replacementNode);
           }
@@ -1474,21 +1497,13 @@ class ProcessClosurePrimitives extends AbstractPostOrderCallback
         decl.setJSDocInfo(NodeUtil.createConstantJsDoc());
       }
 
-      Preconditions.checkState(isNamespacePlaceholder(decl));
+      checkState(isNamespacePlaceholder(decl));
       setSourceInfo(decl);
       return decl;
     }
 
-    /**
-     * There are some special cases where clients of the compiler
-     * do not run TypedScopeCreator after running this pass.
-     * So always give the namespace literal a type.
-     */
     private Node createNamespaceLiteral() {
-      Node objlit = IR.objectlit();
-      objlit.setJSType(
-          compiler.getTypeRegistry().createAnonymousObjectType(null));
-      return objlit;
+      return IR.objectlit();
     }
 
     /**
@@ -1507,7 +1522,7 @@ class ProcessClosurePrimitives extends AbstractPostOrderCallback
       if (candidateDefinition == null) {
         decl.getFirstChild().setJSDocInfo(NodeUtil.createConstantJsDoc());
       }
-      Preconditions.checkState(isNamespacePlaceholder(decl));
+      checkState(isNamespacePlaceholder(decl));
       setSourceInfo(decl);
       return decl;
     }

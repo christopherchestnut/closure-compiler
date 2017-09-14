@@ -15,8 +15,9 @@
  */
 package com.google.javascript.jscomp;
 
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.common.base.Joiner;
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
 import com.google.javascript.rhino.IR;
@@ -378,7 +379,7 @@ class ClosureRewriteClass extends AbstractPostOrderCallback
     } else {
       // Report error in the context that the objlit is an
       // argument of goog.defineClass call.
-      Preconditions.checkState(parent.isCall());
+      checkState(parent.isCall());
       compiler.report(JSError.make(parent, GOOG_CLASS_DESCRIPTOR_NOT_VALID));
     }
   }
@@ -399,11 +400,16 @@ class ClosureRewriteClass extends AbstractPostOrderCallback
       Node objlit) {
     List<MemberDefinition> result = new ArrayList<>();
     for (Node keyNode : objlit.children()) {
+      Node name = keyNode;
+      // The span of a member function def is the whole function. The NAME node should be the
+      // first-first child, which will have a span for just the name of the function.
+      if (keyNode.isMemberFunctionDef()) {
+        name = keyNode.getFirstFirstChild().cloneNode();
+        name.setString(keyNode.getString());
+      }
       result.add(
           new MemberDefinition(
-                NodeUtil.getBestJSDocInfo(keyNode),
-                keyNode,
-                keyNode.removeFirstChild()));
+              NodeUtil.getBestJSDocInfo(keyNode), name, keyNode.removeFirstChild()));
     }
     objlit.detachChildren();
     return result;
@@ -540,7 +546,7 @@ class ClosureRewriteClass extends AbstractPostOrderCallback
   }
 
   private static Node fixupFreeCall(Node call) {
-    Preconditions.checkState(call.isCall());
+    checkState(call.isCall());
     call.putBooleanProp(Node.FREE_CALL, true);
     return call;
   }

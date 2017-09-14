@@ -16,6 +16,8 @@
 
 package com.google.javascript.jscomp.parsing;
 
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkState;
 import static com.google.javascript.rhino.TypeDeclarationsIR.anyType;
 import static com.google.javascript.rhino.TypeDeclarationsIR.arrayType;
 import static com.google.javascript.rhino.TypeDeclarationsIR.booleanType;
@@ -28,7 +30,6 @@ import static com.google.javascript.rhino.TypeDeclarationsIR.undefinedType;
 import static com.google.javascript.rhino.TypeDeclarationsIR.unionType;
 import static com.google.javascript.rhino.TypeDeclarationsIR.voidType;
 
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
@@ -278,7 +279,7 @@ class IRFactory {
   private boolean currentFileIsExterns = false;
   private boolean hasJsDocTypeAnnotations = false;
 
-  private FeatureSet features = FeatureSet.ES3;
+  private FeatureSet features = FeatureSet.BARE_MINIMUM;
   private Node resultNode;
 
   private IRFactory(String sourceString,
@@ -291,6 +292,9 @@ class IRFactory {
     this.currentComment = skipNonJsDoc(nextCommentIter);
     this.newlines = new ArrayList<>();
     this.sourceFile = sourceFile;
+    // The template node properties are applied to all nodes in this transform.
+    this.templateNode = createTemplateNode();
+
     this.fileLevelJsDocBuilder =
         new JSDocInfoBuilder(config.parseJsDocDocumentation.shouldParseDescriptions());
 
@@ -309,8 +313,6 @@ class IRFactory {
     this.config = config;
     this.errorReporter = errorReporter;
     this.transformDispatcher = new TransformDispatcher();
-    // The template node properties are applied to all nodes in this transform.
-    this.templateNode = createTemplateNode();
 
     if (config.strictMode == StrictMode.STRICT) {
       reservedKeywords = ES5_STRICT_RESERVED_KEYWORDS;
@@ -424,7 +426,7 @@ class IRFactory {
         n = work.poll();
       }
     }
-    Preconditions.checkState(work.isEmpty());
+    checkState(work.isEmpty());
   }
 
   private void validate(Node n) {
@@ -902,7 +904,7 @@ class IRFactory {
                                charno + numOpeningChars),
           comment,
           position,
-          sourceFile,
+          templateNode,
           config,
           errorReporter);
     jsdocParser.setFileLevelJsDocBuilder(fileLevelJsDocBuilder);
@@ -933,7 +935,7 @@ class IRFactory {
               charno + numOpeningChars),
           comment,
           node.location.start.offset,
-          sourceFile,
+          templateNode,
           config,
           errorReporter);
     return parser.parseInlineTypeDoc();
@@ -974,7 +976,7 @@ class IRFactory {
         ret = processString(token.asLiteral());
         ret.putBooleanProp(Node.QUOTED_PROP, true);
       }
-      Preconditions.checkState(ret.isString());
+      checkState(ret.isString());
       return ret;
     }
 
@@ -1020,6 +1022,7 @@ class IRFactory {
     }
 
     Node processAssignmentRestElement(AssignmentRestElementTree tree) {
+      maybeWarnForFeature(tree, Feature.ARRAY_PATTERN_REST);
       return newNode(Token.REST, transformNodeWithInlineJsDoc(tree.assignmentTarget));
     }
 
@@ -1043,7 +1046,7 @@ class IRFactory {
     }
 
     private boolean isGoogModuleFile(Node scriptNode) {
-      Preconditions.checkArgument(scriptNode.isScript());
+      checkArgument(scriptNode.isScript());
       if (!scriptNode.hasChildren()) {
         return false;
       }
@@ -1254,6 +1257,12 @@ class IRFactory {
         maybeWarnForFeature(functionTree, Feature.ASYNC_FUNCTIONS);
       }
 
+      // Add a feature so that transpilation process hoists block scoped functions through
+      // var redeclaration in ES3 and ES5
+      if (isDeclaration) {
+        features = features.with(Feature.BLOCK_SCOPED_FUNCTION_DECLARATION);
+      }
+
       IdentifierToken name = functionTree.name;
       Node newName;
       if (name != null) {
@@ -1290,7 +1299,7 @@ class IRFactory {
       if (!isArrow && !isSignature && !bodyNode.isNormalBlock()) {
         // When in "keep going" mode the parser tries to parse some constructs the
         // compiler doesn't support, repair it here.
-        Preconditions.checkState(config.keepGoing == Config.RunMode.KEEP_GOING);
+        checkState(config.keepGoing == Config.RunMode.KEEP_GOING);
         bodyNode = IR.block();
       }
       parseDirectives(bodyNode);
@@ -1303,12 +1312,12 @@ class IRFactory {
 
       Node result;
 
-      if (functionTree.kind == FunctionDeclarationTree.Kind.MEMBER) {
+      if (isMember) {
         setSourceInfo(node, functionTree);
         Node member = newStringNode(Token.MEMBER_FUNCTION_DEF, name.value);
         member.addChildToBack(node);
         member.setStaticMember(functionTree.isStatic);
-        maybeProcessAccessibilityModifier(member, functionTree.access);
+        maybeProcessAccessibilityModifier(functionTree, member, functionTree.access);
         node.setDeclaredTypeExpression(node.getDeclaredTypeExpression());
         result = member;
       } else {
@@ -1325,9 +1334,12 @@ class IRFactory {
           Node paramNode = transformNodeWithInlineJsDoc(param);
           // Children must be simple names, default parameters, rest
           // parameters, or destructuring patterns.
-          Preconditions.checkState(paramNode.isName() || paramNode.isRest()
-              || paramNode.isArrayPattern() || paramNode.isObjectPattern()
-              || paramNode.isDefaultValue());
+          checkState(
+              paramNode.isName()
+                  || paramNode.isRest()
+                  || paramNode.isArrayPattern()
+                  || paramNode.isObjectPattern()
+                  || paramNode.isDefaultValue());
           params.addChildToBack(paramNode);
         }
       }
@@ -1473,18 +1485,18 @@ class IRFactory {
     }
 
     Node processString(LiteralToken token) {
-      Preconditions.checkArgument(token.type == TokenType.STRING);
+      checkArgument(token.type == TokenType.STRING);
       Node node = newStringNode(Token.STRING, normalizeString(token, false));
       setSourceInfo(node, token);
       return node;
     }
 
     Node processTemplateLiteralToken(LiteralToken token) {
-      Preconditions.checkArgument(
+      checkArgument(
           token.type == TokenType.NO_SUBSTITUTION_TEMPLATE
-          || token.type == TokenType.TEMPLATE_HEAD
-          || token.type == TokenType.TEMPLATE_MIDDLE
-          || token.type == TokenType.TEMPLATE_TAIL);
+              || token.type == TokenType.TEMPLATE_HEAD
+              || token.type == TokenType.TEMPLATE_MIDDLE
+              || token.type == TokenType.TEMPLATE_TAIL);
       Node node = newStringNode(normalizeString(token, true));
       node.putProp(Node.RAW_STRING_VALUE, token.value);
       setSourceInfo(node, token);
@@ -1593,14 +1605,14 @@ class IRFactory {
 
     Node processComputedPropertyMemberVariable(ComputedPropertyMemberVariableTree tree) {
       maybeWarnForFeature(tree, Feature.COMPUTED_PROPERTIES);
-      maybeWarnTypeSyntax(tree, Feature.COMPUTED_PROPERTIES);
+      maybeWarnTypeSyntax(tree, Feature.MEMBER_VARIABLE_IN_CLASS);
 
       Node n = newNode(Token.COMPUTED_PROP, transform(tree.property));
       maybeProcessType(n, tree.declaredType);
       n.putBooleanProp(Node.COMPUTED_PROP_VARIABLE, true);
       n.putProp(Node.ACCESS_MODIFIER, tree.access);
       n.setStaticMember(tree.isStatic);
-      maybeProcessAccessibilityModifier(n, tree.access);
+      maybeProcessAccessibilityModifier(tree, n, tree.access);
       return n;
     }
 
@@ -1613,7 +1625,7 @@ class IRFactory {
       if (tree.method.asFunctionDeclaration().isStatic) {
         n.setStaticMember(true);
       }
-      maybeProcessAccessibilityModifier(n, tree.access);
+      maybeProcessAccessibilityModifier(tree, n, tree.access);
       return n;
     }
 
@@ -1941,7 +1953,8 @@ class IRFactory {
     }
 
     private Node createUpdateNode(Token type, boolean postfix, Node operand) {
-      if (!operand.isValidAssignmentTarget()) {
+      Node assignTarget = operand.isCast() ? operand.getFirstChild() : operand;
+      if (!assignTarget.isValidAssignmentTarget()) {
         errorReporter.error(
             SimpleFormat.format("Invalid %s %s operand.",
                 (postfix ? "postfix" : "prefix"),
@@ -2172,7 +2185,7 @@ class IRFactory {
       maybeProcessType(member, tree.declaredType);
       member.setStaticMember(tree.isStatic);
       member.putBooleanProp(Node.OPT_ES6_TYPED, tree.isOptional);
-      maybeProcessAccessibilityModifier(member, tree.access);
+      maybeProcessAccessibilityModifier(tree, member, tree.access);
       return member;
     }
 
@@ -2181,7 +2194,7 @@ class IRFactory {
       if (tree.expression != null) {
         yield.addChildToBack(transform(tree.expression));
       }
-      yield.setYieldFor(tree.isYieldFor);
+      yield.setYieldAll(tree.isYieldAll);
       return yield;
     }
 
@@ -2196,10 +2209,9 @@ class IRFactory {
       maybeWarnForFeature(tree, Feature.MODULES);
       Node decls = null;
       if (tree.isExportAll) {
-        Preconditions.checkState(
-            tree.declaration == null && tree.exportSpecifierList == null);
+        checkState(tree.declaration == null && tree.exportSpecifierList == null);
       } else if (tree.declaration != null) {
-        Preconditions.checkState(tree.exportSpecifierList == null);
+        checkState(tree.exportSpecifierList == null);
         decls = transform(tree.declaration);
       } else {
         decls = transformList(Token.EXPORT_SPECS, tree.exportSpecifierList);
@@ -2577,7 +2589,7 @@ class IRFactory {
       }
     }
 
-    void maybeProcessAccessibilityModifier(Node n, TokenType type) {
+    void maybeProcessAccessibilityModifier(ParseTree parseTree, Node n, @Nullable TokenType type) {
       if (type != null) {
         Visibility access;
         switch (type) {
@@ -2593,6 +2605,7 @@ class IRFactory {
           default:
             throw new IllegalStateException("Unexpected access modifier type");
         }
+        maybeWarnTypeSyntax(parseTree, Feature.ACCESSIBILITY_MODIFIER);
         n.putProp(Node.ACCESS_MODIFIER, access);
       }
     }
@@ -2909,10 +2922,15 @@ class IRFactory {
           }
           // line continuation, skip the line break
           break;
-        case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7':
+        case '0':
+          if (cur + 1 >= value.length()) {
+            break;
+          }
+          // fall through
+        case '1': case '2': case '3': case '4': case '5': case '6': case '7':
           char next1 = value.charAt(cur + 1);
 
-          if (inStrictContext()) {
+          if (inStrictContext() || templateLiteral) {
             if (c == '0' && !isOctalDigit(next1)) {
               // No warning: "\0" followed by a character which is not an octal digit
               // is allowed in strict mode.
@@ -2996,9 +3014,8 @@ class IRFactory {
     String value = token.value;
     SourceRange location = token.location;
     int length = value.length();
-    Preconditions.checkState(length > 0);
-    Preconditions.checkState(value.charAt(0) != '-'
-        && value.charAt(0) != '+');
+    checkState(length > 0);
+    checkState(value.charAt(0) != '-' && value.charAt(0) != '+');
     if (value.charAt(0) == '.') {
       return Double.valueOf('0' + value);
     } else if (value.charAt(0) == '0' && length > 1) {
@@ -3048,11 +3065,6 @@ class IRFactory {
         }
         case '0': case '1': case '2': case '3':
         case '4': case '5': case '6': case '7':
-          if (inStrictContext()) {
-            errorReporter.error(INVALID_ES5_STRICT_OCTAL, sourceName,
-                lineno(location.start), charno(location.start));
-            return 0;
-          }
           double v = 0;
           int c = 0;
           while (++c < length) {
@@ -3060,13 +3072,23 @@ class IRFactory {
             if (isOctalDigit(digit)) {
               v = (v * 8) + octaldigit(digit);
             } else {
-              errorReporter.error(INVALID_OCTAL_DIGIT, sourceName,
-                  lineno(location.start), charno(location.start));
+              if (inStrictContext()) {
+                errorReporter.error(INVALID_ES5_STRICT_OCTAL, sourceName,
+                    lineno(location.start), charno(location.start));
+              } else {
+                errorReporter.error(INVALID_OCTAL_DIGIT, sourceName,
+                    lineno(location.start), charno(location.start));
+              }
               return 0;
             }
           }
-          errorReporter.warning(INVALID_ES5_STRICT_OCTAL, sourceName,
-              lineno(location.start), charno(location.start));
+          if (inStrictContext()) {
+            errorReporter.error(INVALID_ES5_STRICT_OCTAL, sourceName,
+                lineno(location.start), charno(location.start));
+          } else {
+            errorReporter.warning(INVALID_ES5_STRICT_OCTAL, sourceName,
+                lineno(location.start), charno(location.start));
+          }
           return v;
         case '8': case '9':
           errorReporter.error(INVALID_OCTAL_DIGIT, sourceName,

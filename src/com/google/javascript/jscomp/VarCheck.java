@@ -16,9 +16,10 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.common.base.Preconditions;
+import static com.google.common.base.Preconditions.checkState;
+
+import com.google.javascript.jscomp.Es6SyntacticScopeCreator.RedeclarationHandler;
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
-import com.google.javascript.jscomp.SyntacticScopeCreator.RedeclarationHandler;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.JSDocInfo;
 import com.google.javascript.rhino.JSDocInfoBuilder;
@@ -73,7 +74,7 @@ class VarCheck extends AbstractPostOrderCallback implements
   static final DiagnosticType VAR_MULTIPLY_DECLARED_ERROR =
       DiagnosticType.error(
           "JSC_VAR_MULTIPLY_DECLARED_ERROR",
-          "Variable {0} declared more than once. First occurence: {1}");
+          "Variable {0} declared more than once. First occurrence: {1}");
 
   static final DiagnosticType VAR_ARGUMENTS_SHADOWED_ERROR =
     DiagnosticType.error(
@@ -153,7 +154,7 @@ class VarCheck extends AbstractPostOrderCallback implements
 
   @Override
   public void hotSwapScript(Node scriptRoot, Node originalRoot) {
-    Preconditions.checkState(scriptRoot.isScript());
+    checkState(scriptRoot.isScript());
     ScopeCreator scopeCreator = createScopeCreator();
     NodeTraversal t = new NodeTraversal(compiler, this, scopeCreator);
     // Note we use the global scope to prevent wrong "undefined-var errors" on
@@ -170,8 +171,8 @@ class VarCheck extends AbstractPostOrderCallback implements
 
       // Only a function can have an empty name.
       if (varName.isEmpty()) {
-        Preconditions.checkState(parent.isFunction());
-        Preconditions.checkState(NodeUtil.isFunctionExpression(parent));
+        checkState(parent.isFunction());
+        checkState(NodeUtil.isFunctionExpression(parent));
         return;
       }
 
@@ -203,6 +204,10 @@ class VarCheck extends AbstractPostOrderCallback implements
           }
 
           if (sanityCheck) {
+            // When the code is initially traversed, any undeclared variables are treated as
+            // externs. During this sanity check, we ensure that all variables have either been
+            // declared or marked as an extern. A failure at this point means that we have created
+            // some variable/generated some code with an undefined reference.
             throw new IllegalStateException("Unexpected variable " + varName);
           } else {
             createSynthesizedExternVar(varName);
@@ -344,7 +349,7 @@ class VarCheck extends AbstractPostOrderCallback implements
    *     for the given node.
    */
   static boolean hasDuplicateDeclarationSuppression(Node n, Var origVar) {
-    Preconditions.checkState(n.isName() || n.isRest() || n.isStringKey(), n);
+    checkState(n.isName() || n.isRest() || n.isStringKey(), n);
     Node parent = n.getParent();
     Node origParent = origVar.getParentNode();
 
@@ -408,7 +413,8 @@ class VarCheck extends AbstractPostOrderCallback implements
                             ? origVar.input.getName()
                             : "??")));
         }
-      } else if (name.equals(ARGUMENTS) && !NodeUtil.isVarDeclaration(n)) {
+      } else if (name.equals(ARGUMENTS)
+          && !(NodeUtil.isNameDeclaration(n.getParent()) && n.isName())) {
         // Disallow shadowing "arguments" as we can't handle with our current
         // scope modeling.
         compiler.report(

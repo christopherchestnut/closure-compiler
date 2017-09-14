@@ -16,6 +16,10 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
 import com.google.javascript.rhino.IR;
@@ -29,18 +33,19 @@ import com.google.javascript.rhino.Token;
 class DefinitionsRemover {
 
   /**
-   * This logic must match {@link isDefinitionNode}.
+   * This logic must match {@link #isDefinitionNode(Node n)}.
    *
    * @return an {@link Definition} object if the node contains a definition or {@code null}
    *     otherwise.
    */
+
   static Definition getDefinition(Node n, boolean isExtern) {
     Node parent = n.getParent();
     if (parent == null) {
       return null;
     }
 
-    if (NodeUtil.isVarDeclaration(n) && (isExtern || n.hasChildren())) {
+    if (NodeUtil.isNameDeclaration(parent) && n.isName() && (isExtern || n.hasChildren())) {
       return new VarDefinition(n, isExtern);
     } else if (parent.isFunction() && parent.getFirstChild() == n) {
       if (!NodeUtil.isFunctionExpression(parent)) {
@@ -48,17 +53,26 @@ class DefinitionsRemover {
       } else if (!n.getString().isEmpty()) {
         return new FunctionExpressionDefinition(parent, isExtern);
       }
+    } else if (parent.isClass() && parent.getFirstChild() == n) {
+      if (!NodeUtil.isClassExpression(parent)) {
+        return new NamedClassDefinition(parent, isExtern);
+      } else if (!n.isEmpty()) {
+        return new ClassExpressionDefinition(parent, isExtern);
+      }
+    } else if (n.isMemberFunctionDef() && parent.isClassMembers()) {
+      return new MemberFunctionDefinition(n, isExtern);
     } else if (parent.isAssign() && parent.getFirstChild() == n) {
       return new AssignmentDefinition(parent, isExtern);
     } else if (NodeUtil.isObjectLitKey(n)) {
       return new ObjectLiteralPropertyDefinition(parent, n, n.getFirstChild(), isExtern);
-    } else if (parent.isParamList()) {
-      Node function = parent.getParent();
+    } else if (NodeUtil.getEnclosingType(n, Token.PARAM_LIST) != null && n.isName()) {
+      Node paramList = NodeUtil.getEnclosingType(n, Token.PARAM_LIST);
+      Node function = paramList.getParent();
       return new FunctionArgumentDefinition(function, n, isExtern);
     } else if (parent.getToken() == Token.COLON && parent.getFirstChild() == n && isExtern) {
       Node grandparent = parent.getParent();
-      Preconditions.checkState(grandparent.getToken() == Token.LB);
-      Preconditions.checkState(grandparent.getParent().getToken() == Token.LC);
+      checkState(grandparent.getToken() == Token.LB);
+      checkState(grandparent.getParent().getToken() == Token.LC);
       return new RecordTypePropertyDefinition(n);
     } else if (isExtern && n.isGetProp() && parent.isExprResult() && n.isQualifiedName()) {
       return new ExternalNameOnlyDefinition(n);
@@ -67,7 +81,7 @@ class DefinitionsRemover {
   }
 
   /**
-   * This logic must match {@link getDefinition}.
+   * This logic must match {@link #getDefinition(Node, boolean)}.
    *
    * @return Whether a definition object can be created.
    */
@@ -77,7 +91,8 @@ class DefinitionsRemover {
       return false;
     }
 
-    if (NodeUtil.isVarDeclaration(n) && (n.isFromExterns() || n.hasChildren())) {
+    if (NodeUtil.isNameDeclaration(parent) && n.isName()
+        && (n.isFromExterns() || n.hasChildren())) {
       return true;
     } else if (parent.isFunction() && parent.getFirstChild() == n) {
       if (!NodeUtil.isFunctionExpression(parent)) {
@@ -85,6 +100,14 @@ class DefinitionsRemover {
       } else if (!n.getString().isEmpty()) {
         return true;
       }
+    } else if (parent.isClass() && parent.getFirstChild() == n) {
+      if (!NodeUtil.isClassExpression(parent)) {
+        return true;
+      } else if (!n.isEmpty()) {
+        return true;
+      }
+    } else if (n.isMemberFunctionDef() && parent.isClassMembers()) {
+      return true;
     } else if (parent.isAssign() && parent.getFirstChild() == n) {
       return true;
     } else if (NodeUtil.isObjectLitKey(n)) {
@@ -95,8 +118,8 @@ class DefinitionsRemover {
         && parent.getFirstChild() == n
         && n.isFromExterns()) {
       Node grandparent = parent.getParent();
-      Preconditions.checkState(grandparent.getToken() == Token.LB);
-      Preconditions.checkState(grandparent.getParent().getToken() == Token.LC);
+      checkState(grandparent.getToken() == Token.LB);
+      checkState(grandparent.getParent().getToken() == Token.LC);
       return true;
     } else if (n.isFromExterns() && parent.isExprResult() && n.isGetProp() && n.isQualifiedName()) {
       return true;
@@ -108,9 +131,11 @@ class DefinitionsRemover {
   abstract static class Definition {
 
     private final boolean isExtern;
+    private final String simplifiedName;
 
-    Definition(boolean isExtern) {
+    Definition(boolean isExtern, String simplifiedName) {
       this.isExtern = isExtern;
+      this.simplifiedName = simplifiedName;
     }
 
     /**
@@ -131,6 +156,10 @@ class DefinitionsRemover {
      * Subclasses should override to remove the definition from the AST.
      */
     protected abstract void performRemove(AbstractCompiler compiler);
+
+    public String getSimplifiedName() {
+      return simplifiedName;
+    }
 
     /**
      * Variable or property name represented by this definition.
@@ -172,8 +201,9 @@ class DefinitionsRemover {
     private final Node lValue;
 
     IncompleteDefinition(Node lValue, boolean inExterns) {
-      super(inExterns);
-      Preconditions.checkNotNull(lValue);
+      super(inExterns, NameBasedDefinitionProvider.getSimplifiedName(lValue));
+      checkNotNull(lValue);
+
       Preconditions.checkArgument(
           ALLOWED_TYPES.contains(lValue.getToken()),
           "Unexpected lValue type %s",
@@ -231,8 +261,8 @@ class DefinitionsRemover {
         Node argumentName,
         boolean inExterns) {
       super(argumentName, inExterns);
-      Preconditions.checkArgument(function.isFunction());
-      Preconditions.checkArgument(argumentName.isName());
+      checkArgument(function.isFunction());
+      checkArgument(argumentName.isName());
     }
 
     @Override
@@ -250,8 +280,8 @@ class DefinitionsRemover {
     protected final Node function;
 
     FunctionDefinition(Node node, boolean inExterns) {
-      super(inExterns);
-      Preconditions.checkArgument(node.isFunction());
+      super(inExterns, NameBasedDefinitionProvider.getSimplifiedName(node.getFirstChild()));
+      checkArgument(node.isFunction());
       function = node;
     }
 
@@ -279,6 +309,7 @@ class DefinitionsRemover {
     public void performRemove(AbstractCompiler compiler) {
       compiler.reportChangeToEnclosingScope(function);
       function.detach();
+      NodeUtil.markFunctionsDeleted(function, compiler);
     }
   }
 
@@ -289,8 +320,7 @@ class DefinitionsRemover {
   static final class FunctionExpressionDefinition extends FunctionDefinition {
     FunctionExpressionDefinition(Node node, boolean inExterns) {
       super(node, inExterns);
-      Preconditions.checkArgument(
-          NodeUtil.isFunctionExpression(node));
+      checkArgument(NodeUtil.isFunctionExpression(node));
     }
 
     @Override
@@ -302,14 +332,97 @@ class DefinitionsRemover {
   }
 
   /**
+   * Represents a class member function.
+   */
+
+  static final class MemberFunctionDefinition extends FunctionDefinition {
+
+    protected final Node memberFunctionDef;
+
+    MemberFunctionDefinition(Node node, boolean inExterns) {
+      super(node.getFirstChild(), inExterns);
+      memberFunctionDef = node;
+    }
+
+    @Override
+    public void performRemove(AbstractCompiler compiler) {
+      NodeUtil.deleteNode(memberFunctionDef, compiler);
+    }
+
+    @Override
+    public Node getLValue() {
+      // As far as we know, only the property name matters so the target can be an object literal
+      return IR.getprop(IR.objectlit(), memberFunctionDef.getString());
+    }
+  }
+
+  /**
+   * Represents a class declaration or function expression.
+   */
+  abstract static class ClassDefinition extends Definition {
+
+    protected final Node c;
+
+    ClassDefinition(Node node, boolean inExterns) {
+      super(inExterns, NameBasedDefinitionProvider.getSimplifiedName(node.getFirstChild()));
+      Preconditions.checkArgument(node.isClass());
+      c = node;
+    }
+
+    @Override
+    public Node getLValue() {
+      return c.getFirstChild();
+    }
+
+    @Override
+    public Node getRValue() {
+      return c;
+    }
+  }
+
+  /**
+   * Represents a function declaration without assignment node such as
+   * {@code function foo()}.
+   */
+  static final class NamedClassDefinition extends ClassDefinition {
+    NamedClassDefinition(Node node, boolean inExterns) {
+      super(node, inExterns);
+    }
+
+    @Override
+    public void performRemove(AbstractCompiler compiler) {
+      NodeUtil.deleteNode(c, compiler);
+    }
+  }
+
+  /**
+   * Represents a class expression that acts as a RHS.  The defined
+   * name is only reachable from within the function.
+   */
+  static final class ClassExpressionDefinition extends ClassDefinition {
+    ClassExpressionDefinition(Node node, boolean inExterns) {
+      super(node, inExterns);
+      Preconditions.checkArgument(
+          NodeUtil.isClassExpression(node));
+    }
+
+    @Override
+    public void performRemove(AbstractCompiler compiler) {
+      // replace internal name with ""
+      c.replaceChild(c.getFirstChild(), IR.empty());
+      compiler.reportChangeToEnclosingScope(c.getFirstChild());
+    }
+  }
+
+  /**
    * Represents a declaration within an assignment.
    */
   static final class AssignmentDefinition extends Definition {
     private final Node assignment;
 
     AssignmentDefinition(Node node, boolean inExterns) {
-      super(inExterns);
-      Preconditions.checkArgument(node.isAssign());
+      super(inExterns, NameBasedDefinitionProvider.getSimplifiedName(node.getFirstChild()));
+      checkArgument(node.isAssign());
       assignment = node;
     }
 
@@ -342,7 +455,7 @@ class DefinitionsRemover {
     RecordTypePropertyDefinition(Node name) {
       super(IR.getprop(IR.objectlit(), name.cloneNode()),
             /** isExtern */ true);
-      Preconditions.checkArgument(name.isString());
+      checkArgument(name.isString());
     }
 
     @Override
@@ -364,7 +477,7 @@ class DefinitionsRemover {
 
     ObjectLiteralPropertyDefinition(Node lit, Node name, Node value,
           boolean isExtern) {
-      super(isExtern);
+      super(isExtern, NameBasedDefinitionProvider.getSimplifiedName(getLValue(name)));
 
       this.literal = lit;
       this.name = name;
@@ -379,6 +492,10 @@ class DefinitionsRemover {
 
     @Override
     public Node getLValue() {
+      return getLValue(name);
+    }
+
+    private static Node getLValue(Node name) {
       // TODO(user) revisit: object literal definitions are an example
       // of definitions whose LHS doesn't correspond to a node that
       // exists in the AST.  We will have to change the return type of
@@ -394,7 +511,7 @@ class DefinitionsRemover {
               IR.objectlit(),
               IR.string(name.getString()));
         default:
-          throw new IllegalStateException("unexpected");
+          throw new IllegalStateException("Unexpected left Token: " + name.getToken());
       }
     }
 
@@ -410,8 +527,8 @@ class DefinitionsRemover {
   static final class VarDefinition extends Definition {
     private final Node name;
     VarDefinition(Node node, boolean inExterns) {
-      super(inExterns);
-      Preconditions.checkArgument(NodeUtil.isVarDeclaration(node));
+      super(inExterns, NameBasedDefinitionProvider.getSimplifiedName(node));
+      checkArgument(NodeUtil.isNameDeclaration(node.getParent()) && node.isName());
       Preconditions.checkArgument(inExterns || node.hasChildren(),
           "VAR Declaration of %s must be assigned a value.", node.getString());
       name = node;
@@ -420,11 +537,10 @@ class DefinitionsRemover {
     @Override
     public void performRemove(AbstractCompiler compiler) {
       Node var = name.getParent();
-      Preconditions.checkState(var.getFirstChild() == var.getLastChild(),
-          "AST should be normalized first");
+      checkState(var.getFirstChild() == var.getLastChild(), "AST should be normalized first");
       Node parent = var.getParent();
       Node rValue = name.removeFirstChild();
-      Preconditions.checkState(!NodeUtil.isLoopStructure(parent));
+      checkState(!NodeUtil.isLoopStructure(parent));
       parent.replaceChild(var, NodeUtil.newExpr(rValue));
       compiler.reportChangeToEnclosingScope(parent);
     }

@@ -22,7 +22,8 @@ package com.google.javascript.jscomp;
 public final class SubstituteEs6SyntaxTest extends CompilerTestCase {
 
   @Override
-  public void setUp() {
+  protected void setUp() throws Exception {
+    super.setUp();
     setAcceptedLanguage(CompilerOptions.LanguageMode.ECMASCRIPT_2015);
   }
 
@@ -42,5 +43,19 @@ public final class SubstituteEs6SyntaxTest extends CompilerTestCase {
     test("()=>{ return; }", "()=>undefined");
     test("(x)=>{ return x+1 }", "(x) => x+1");
     test("(x)=>{ return x++,5; }", "(x) => (x++,5)");
+  }
+
+  public void testObjectPattern() {
+    test("const {x: x} = y;", "const {x} = y;");
+    testSame("const {x: y} = z;");
+    testSame("const {[x]: x} = y;");
+    testSame("const {['x']: x} = y;");
+  }
+
+  public void testObjectLiteral() {
+    test("const o = {x: x};", "const o = {x};");
+    testSame("const o = {x: y}");
+    testSame("const o = {[x]: x};");
+    testSame("const o = {['x']: x};");
   }
 }

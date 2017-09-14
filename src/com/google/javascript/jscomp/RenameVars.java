@@ -16,9 +16,10 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.base.Strings.nullToEmpty;
 
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ListMultimap;
@@ -114,7 +115,7 @@ final class RenameVars implements CompilerPass {
      * Assigns the new name.
      */
     void setNewName(String newName) {
-      Preconditions.checkState(this.newName == null);
+      checkState(this.newName == null);
       this.newName = newName;
     }
   }
@@ -184,7 +185,7 @@ final class RenameVars implements CompilerPass {
    * Iterate through the nodes, collect all the NAME nodes that need to be
    * renamed, and count how many times each variable name is referenced.
    *
-   * Keep track of all name references in globalNameNodes_, and localNameNodes_.
+   * Keep track of all name references in globalNameNodes, and localNameNodes.
    *
    * To get shorter local variable renaming, we rename local variables to a
    * temporary name "LOCAL_VAR_PREFIX + index" where index is the index of the
@@ -223,14 +224,20 @@ final class RenameVars implements CompilerPass {
 
     @Override
     public void visit(NodeTraversal t, Node n, Node parent) {
-      if (!n.isName()) {
+      if (!(n.isName() || n.isImportStar())) {
         return;
       }
 
       String name = n.getString();
 
-      // Ignore anonymous functions
+      // Ignore anonymous functions and classes.
       if (name.isEmpty()) {
+        return;
+      }
+
+      // "import {x as y} from 'm';"
+      // Skip x because it's not a variable in this scope.
+      if (parent.isImportSpec() && parent.hasTwoChildren() && parent.getFirstChild() == n) {
         return;
       }
 
@@ -444,7 +451,7 @@ final class RenameVars implements CompilerPass {
     // If prevUsedRenameMap had duplicate values then this pass would be
     // non-deterministic.
     // In such a case, the following will throw an IllegalArgumentException.
-    Preconditions.checkNotNull(prevUsedRenameMap.getNewNameToOriginalNameMap());
+    checkNotNull(prevUsedRenameMap.getNewNameToOriginalNameMap());
     for (Assignment a : assignments.values()) {
       String prevNewName = prevUsedRenameMap.lookupNewName(a.oldName);
       if (prevNewName == null || reservedNames.contains(prevNewName)) {

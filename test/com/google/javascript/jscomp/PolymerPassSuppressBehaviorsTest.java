@@ -21,10 +21,11 @@ import com.google.javascript.rhino.Node;
 /**
  * Unit tests for {@link PolymerPassSuppressBehaviors}
  */
-public class PolymerPassSuppressBehaviorsTest extends CompilerTestCase {
+public class PolymerPassSuppressBehaviorsTest extends TypeICompilerTestCase {
 
   private static final String EXTERNS =
       LINE_JOINER.join(
+          MINIMAL_EXTERNS,
           "/** @constructor */",
           "var HTMLElement = function() {};",
           "/** @constructor @extends {HTMLElement} */",
@@ -75,10 +76,10 @@ public class PolymerPassSuppressBehaviorsTest extends CompilerTestCase {
   protected void setUp() throws Exception {
     super.setUp();
     setAcceptedLanguage(LanguageMode.ECMASCRIPT_2017);
-    allowExternsChanges(true);
-    enableTypeCheck();
-    runTypeCheckAfterProcessing = true;
-    parseTypeInfo = true;
+    allowExternsChanges();
+    this.mode = TypeInferenceMode.BOTH;
+    enableRunTypeCheckAfterProcessing();
+    enableParseTypeInfo();
   }
 
   @Override
@@ -170,7 +171,7 @@ public class PolymerPassSuppressBehaviorsTest extends CompilerTestCase {
   }
 
   public void testConstBehaviours() {
-    disableTypeCheck();
+    this.mode = TypeInferenceMode.NEITHER;
     test(
         LINE_JOINER.join(
             "/** @polymerBehavior */",
@@ -184,7 +185,7 @@ public class PolymerPassSuppressBehaviorsTest extends CompilerTestCase {
   }
 
   public void testLetBehaviours() {
-    disableTypeCheck();
+    this.mode = TypeInferenceMode.NEITHER;
     test(
         LINE_JOINER.join(
             "/** @polymerBehavior */",

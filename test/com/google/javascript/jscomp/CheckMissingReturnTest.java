@@ -24,8 +24,10 @@ import com.google.javascript.jscomp.CompilerOptions.LanguageMode;
  */
 public final class CheckMissingReturnTest extends CompilerTestCase {
 
-  public CheckMissingReturnTest() {
-    enableTypeCheck();
+  @Override
+  protected void setUp() throws Exception {
+    super.setUp();
+    enableTypeCheck(); // NOTE: CheckMissingReturn is an OTI-only pass.
   }
 
   @Override
@@ -127,31 +129,31 @@ public final class CheckMissingReturnTest extends CompilerTestCase {
     // return statements in the three possible configurations: both scopes
     // return; enclosed doesn't return; enclosing doesn't return.
     testNotMissing(
-        "try {" +
-        "   /** @return {number} */ function f() {" +
-        "       try { return 1; }" +
-        "       finally { }" +
-        "   };" +
-        "   return 1;" +
-        "}" +
-        "finally { }");
+        "try {"
+            + "   /** @return {number} */ function f() {"
+            + "       try { return 1; }"
+            + "       finally { }"
+            + "   };"
+            + "   return 1;"
+            + "}"
+            + "finally { }");
     testMissing(
-        "try {" +
-        "   /** @return {number} */ function f() {" +
-        "       try { }" +
-        "       finally { }" +
-        "   };" +
-        "   return 1;" +
-        "}" +
-        "finally { }");
+        "try {"
+            + "   /** @return {number} */ function f() {"
+            + "       try { }"
+            + "       finally { }"
+            + "   };"
+            + "   return 1;"
+            + "}"
+            + "finally { }");
     testMissing(
-        "try {" +
-        "   /** @return {number} */ function f() {" +
-        "       try { return 1; }" +
-        "       finally { }" +
-        "   };" +
-        "}" +
-        "finally { }");
+        "try {"
+            + "   /** @return {number} */ function f() {"
+            + "       try { return 1; }"
+            + "       finally { }"
+            + "   };"
+            + "}"
+            + "finally { }");
   }
 
   public void testKnownConditions() {
@@ -192,8 +194,7 @@ public final class CheckMissingReturnTest extends CompilerTestCase {
 
   public void testIssue779() {
     testNotMissing(
-        "var a = f(); try { alert(); if (a > 0) return 1; }" +
-        "finally { a = 5; } return 2;");
+        "var a = f(); try { alert(); if (a > 0) return 1; }" + "finally { a = 5; } return 2;");
   }
 
   public void testConstructors() {
@@ -207,9 +208,9 @@ public final class CheckMissingReturnTest extends CompilerTestCase {
 
   public void testClosureAsserts() {
     String closureDefs =
-        "/** @const */ var goog = {};\n" +
-        "goog.asserts = {};\n" +
-        "goog.asserts.fail = function(x) {};";
+        "/** @const */ var goog = {};\n"
+            + "goog.asserts = {};\n"
+            + "goog.asserts.fail = function(x) {};";
 
     testNotMissing(closureDefs + "goog.asserts.fail('');");
 
@@ -274,5 +275,29 @@ public final class CheckMissingReturnTest extends CompilerTestCase {
   /** Creates function with return type {number} */
   private void testMissing(String body) {
     testMissing("number", body);
+  }
+
+  public void testArrowFunctions() {
+    setAcceptedLanguage(LanguageMode.ECMASCRIPT_2015);
+
+    // undefined return statement
+    testNoWarning(LINE_JOINER.join("/** @return {undefined} */", "() => {}"));
+
+    // arrow function with expression function body
+    testSame(LINE_JOINER.join("/** @return {number} */", "() => 1"));
+
+    testSame(LINE_JOINER.join("/** @return {number} */", "(a) => (a > 3) ? 1 : 0"));
+
+    // arrow function with block function body
+    testSame(
+        LINE_JOINER.join(
+            "/** @return {number} */", "(a) => { if (a > 3) { return 1; } else { return 0; }}"));
+
+    testWarning(
+        LINE_JOINER.join("/** @return {number} */", "(a) => { if (a > 3) { return 1; } else { } }"),
+        CheckMissingReturn.MISSING_RETURN_STATEMENT);
+
+    // arrow function return is object literal
+    testSame("(a) => ({foo: 1});");
   }
 }

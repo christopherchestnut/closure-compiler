@@ -16,9 +16,9 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.base.Preconditions.checkState;
 import static com.google.javascript.rhino.jstype.JSTypeNative.NUMBER_STRING_BOOLEAN;
 
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
 import com.google.javascript.jscomp.GlobalNamespace.Name;
@@ -37,6 +37,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import javax.annotation.Nullable;
 
 /**
  * Process variables annotated as {@code @define}. A define is
@@ -55,6 +56,7 @@ class ProcessDefines implements CompilerPass {
 
   private final AbstractCompiler compiler;
   private final Map<String, Node> dominantReplacements;
+  private final boolean doReplacements;
 
   private GlobalNamespace namespace = null;
 
@@ -96,9 +98,11 @@ class ProcessDefines implements CompilerPass {
    * @param replacements A hash table of names of defines to their replacements.
    *   All replacements <b>must</b> be literals.
    */
-  ProcessDefines(AbstractCompiler compiler, Map<String, Node> replacements) {
+  ProcessDefines(
+      AbstractCompiler compiler, Map<String, Node> replacements, boolean doReplacements) {
     this.compiler = compiler;
-    dominantReplacements = replacements;
+    this.dominantReplacements = replacements;
+    this.doReplacements = doReplacements;
   }
 
   /**
@@ -113,26 +117,28 @@ class ProcessDefines implements CompilerPass {
 
   @Override
   public void process(Node externs, Node root) {
-    overrideDefines(collectDefines(root));
+    overrideDefines(collectDefines(externs, root));
   }
 
   private void overrideDefines(Map<String, DefineInfo> allDefines) {
-    for (Map.Entry<String, DefineInfo> def : allDefines.entrySet()) {
-      String defineName = def.getKey();
-      DefineInfo info = def.getValue();
-      Node inputValue = dominantReplacements.get(defineName);
-      Node finalValue = inputValue != null ?
-          inputValue : info.getLastValue();
-      if (finalValue != info.initialValue) {
-        compiler.addToDebugLog("Overriding @define variable " + defineName);
-        boolean changed =
-            finalValue.getToken() != info.initialValue.getToken()
-            || !finalValue.isEquivalentTo(info.initialValue);
-        if (changed) {
-          info.initialValueParent.replaceChild(
-              info.initialValue, finalValue.cloneTree());
+    if (doReplacements) {
+      for (Map.Entry<String, DefineInfo> def : allDefines.entrySet()) {
+        String defineName = def.getKey();
+        DefineInfo info = def.getValue();
+        Node inputValue = dominantReplacements.get(defineName);
+        Node finalValue = inputValue != null ?
+            inputValue : info.getLastValue();
+        if (finalValue != info.initialValue) {
+          compiler.addToDebugLog("Overriding @define variable ", defineName);
+          boolean changed =
+              finalValue.getToken() != info.initialValue.getToken()
+              || !finalValue.isEquivalentTo(info.initialValue);
           if (changed) {
-            compiler.reportChangeToEnclosingScope(info.initialValueParent);
+            info.initialValueParent.replaceChild(
+                info.initialValue, finalValue.cloneTree());
+            if (changed) {
+              compiler.reportChangeToEnclosingScope(info.initialValueParent);
+            }
           }
         }
       }
@@ -165,9 +171,9 @@ class ProcessDefines implements CompilerPass {
    * each one.
    * @return A map of {@link DefineInfo} structures, keyed by name.
    */
-  Map<String, DefineInfo> collectDefines(Node root) {
+  Map<String, DefineInfo> collectDefines(Node externs, Node root) {
     if (namespace == null) {
-      namespace = new GlobalNamespace(compiler, root);
+      namespace = new GlobalNamespace(compiler, externs, root);
     }
 
     // Find all the global names with a @define annotation
@@ -208,7 +214,7 @@ class ProcessDefines implements CompilerPass {
     }
 
     CollectDefines pass = new CollectDefines(compiler, allDefines);
-    NodeTraversal.traverseEs6(compiler, root, pass);
+    NodeTraversal.traverseRootsEs6(compiler, pass, externs, root);
     return pass.getAllDefines();
   }
 
@@ -339,7 +345,7 @@ class ProcessDefines implements CompilerPass {
           n.removeChild(last);
           parent.replaceChild(n, last);
         } else {
-          Preconditions.checkState(n.isName(), n);
+          checkState(n.isName(), n);
           n.removeFirstChild();
         }
         t.reportCodeChange();
@@ -415,8 +421,9 @@ class ProcessDefines implements CompilerPass {
      */
     private boolean processDefineAssignment(NodeTraversal t,
         String name, Node value, Node valueParent) {
-      if (value == null || !NodeUtil.isValidDefineValue(value,
-                                                        allDefines.keySet())) {
+      boolean fromExterns = valueParent.isFromExterns();
+      if (!fromExterns
+          && (value == null || !NodeUtil.isValidDefineValue(value, allDefines.keySet()))) {
         compiler.report(
             t.makeError(value, INVALID_DEFINE_INIT_ERROR, name));
       } else if (!isAssignAllowed()) {
@@ -452,10 +459,10 @@ class ProcessDefines implements CompilerPass {
      * the parent would be the NAME node.
      */
     private static Node getValueParent(Ref ref) {
-      // there are two types of declarations: VARs and ASSIGNs
+      // there are two types of declarations: VARs, ASSIGNs, and CONSTs
       return ref.node.getParent() != null &&
-          ref.node.getParent().isVar() ?
-          ref.node : ref.node.getParent();
+          (ref.node.getParent().isVar() || ref.node.getParent().isConst())
+          ? ref.node : ref.node.getParent();
     }
 
     /**
@@ -492,7 +499,7 @@ class ProcessDefines implements CompilerPass {
    */
   private static final class DefineInfo {
     public final Node initialValueParent;
-    public final Node initialValue;
+    public final @Nullable Node initialValue;
     private Node lastValue;
     private boolean isAssignable;
     private String reasonNotAssignable;
@@ -500,7 +507,8 @@ class ProcessDefines implements CompilerPass {
     /**
      * Initializes a define.
      */
-    public DefineInfo(Node initialValue, Node initialValueParent) {
+    public DefineInfo(@Nullable Node initialValue, Node initialValueParent) {
+      checkState(initialValue != null || initialValueParent.isFromExterns());
       this.initialValueParent = initialValueParent;
       this.initialValue = initialValue;
       lastValue = initialValue;

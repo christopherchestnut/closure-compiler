@@ -16,6 +16,7 @@
 
 package com.google.javascript.jscomp;
 
+import java.io.IOException;
 import java.util.List;
 
 /**
@@ -48,15 +49,11 @@ public abstract class TypeICompilerTestCase extends CompilerTestCase {
   protected TypeInferenceMode mode = TypeInferenceMode.BOTH;
 
   public TypeICompilerTestCase() {
-    super();
+    super(MINIMAL_EXTERNS);
   }
 
   public TypeICompilerTestCase(String defaultExterns) {
     super(defaultExterns);
-  }
-
-  public TypeICompilerTestCase(String defaultExterns, boolean compareAsTree) {
-    super(defaultExterns, compareAsTree);
   }
 
   @Override
@@ -73,87 +70,102 @@ public abstract class TypeICompilerTestCase extends CompilerTestCase {
   // "post-dominates" any `test` call.
 
   @Override
-  public void test(
-      List<SourceFile> externs,
-      String js,
-      String expected,
-      DiagnosticType error,
-      DiagnosticType warning,
-      String description) {
+  protected void testInternal(
+      Externs externs,
+      Sources js,
+      Expected expected,
+      Diagnostic diagnostic,
+      List<Postcondition> postconditions) {
     if (this.mode.runsOTI()) {
-      testOTI(externs, js, expected, error, warning, description);
+      testOTI(externs, js, expected, diagnostic, postconditions);
     }
     if (this.mode.runsNTI()) {
-      testNTI(externs, js, expected, error, warning, description);
+      checkMinimalExterns(externs.externs);
+      testNTI(externs, js, expected, diagnostic, postconditions);
     }
     if (this.mode.runsNeither()) {
-      super.test(externs, js, expected, error, warning, description);
+      super.testInternal(externs, js, expected, diagnostic, postconditions);
     }
+  }
+
+  @Override
+  protected void testExternChanges(String extern, String input, String expectedExtern,
+      DiagnosticType... warnings) {
+    if (this.mode.runsOTI()) {
+      testExternChangesOTI(extern, input, expectedExtern, warnings);
+    }
+    if (this.mode.runsNTI()) {
+      testExternChangesNTI(extern, input, expectedExtern, warnings);
+    }
+    if (this.mode.runsNeither()) {
+      super.testExternChanges(extern, input, expectedExtern, warnings);
+    }
+  }
+
+  // Note: may be overridden to allow different externs if necessary.
+  void checkMinimalExterns(Iterable<SourceFile> externs) {
+    try {
+      for (SourceFile extern : externs) {
+        if (extern.getCode().contains(MINIMAL_EXTERNS)) {
+          return;
+        }
+      }
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
+    fail("NTI reqires at least the MINIMAL_EXTERNS");
   }
 
   private void testOTI(
-      List<SourceFile> externs,
-      String js,
-      String expected,
-      DiagnosticType error,
-      DiagnosticType warning,
-      String description) {
+      Externs externs,
+      Sources js,
+      Expected expected,
+      Diagnostic diagnostic,
+      List<Postcondition> postconditions) {
+    TypeInferenceMode saved = this.mode;
+    this.mode = TypeInferenceMode.OTI_ONLY;
     enableTypeCheck();
-    super.test(externs, js, expected, error, warning, description);
+    Diagnostic oti =
+        diagnostic instanceof OtiNtiDiagnostic ? ((OtiNtiDiagnostic) diagnostic).oti : diagnostic;
+    super.testInternal(externs, js, expected, oti, postconditions);
     disableTypeCheck();
+    this.mode = saved;
   }
 
   private void testNTI(
-      List<SourceFile> externs,
-      String js,
-      String expected,
-      DiagnosticType error,
-      DiagnosticType warning,
-      String description) {
+      Externs externs,
+      Sources js,
+      Expected expected,
+      Diagnostic diagnostic,
+      List<Postcondition> postconditions) {
+    TypeInferenceMode saved = this.mode;
+    this.mode = TypeInferenceMode.NTI_ONLY;
     enableNewTypeInference();
-    super.test(externs, js, expected, error, warning, description);
+    Diagnostic nti =
+        diagnostic instanceof OtiNtiDiagnostic ? ((OtiNtiDiagnostic) diagnostic).nti : diagnostic;
+    super.testInternal(externs, js, expected, nti, postconditions);
     disableNewTypeInference();
+    this.mode = saved;
   }
 
-  @Override
-  public void test(
-      List<SourceFile> js,
-      List<SourceFile> expected,
-      DiagnosticType error,
-      DiagnosticType warning,
-      String description) {
-    if (this.mode.runsOTI()) {
-      enableTypeCheck();
-      super.test(js, expected, error, warning, description);
-      disableTypeCheck();
-    }
-    if (this.mode.runsNTI()) {
-      enableNewTypeInference();
-      super.test(js, expected, error, warning, description);
-      disableNewTypeInference();
-    }
-    if (this.mode.runsNeither()) {
-      super.test(js, expected, error, warning, description);
-    }
+  private void testExternChangesOTI(String extern, String input, String expectedExtern,
+      DiagnosticType... warnings) {
+    TypeInferenceMode saved = this.mode;
+    this.mode = TypeInferenceMode.OTI_ONLY;
+    enableTypeCheck();
+    super.testExternChanges(extern, input, expectedExtern, warnings);
+    disableTypeCheck();
+    this.mode = saved;
   }
 
-  @Override
-  protected void test(
-      Compiler compiler, List<SourceFile> inputs,
-      List<SourceFile> expected, DiagnosticType error, DiagnosticType warning) {
-    if (this.mode.runsOTI()) {
-      enableTypeCheck();
-      super.test(compiler, inputs, expected, error, warning);
-      disableTypeCheck();
-    }
-    if (this.mode.runsNTI()) {
-      enableNewTypeInference();
-      super.test(compiler, inputs, expected, error, warning);
-      disableNewTypeInference();
-    }
-    if (this.mode.runsNeither()) {
-      super.test(compiler, inputs, expected, error, warning);
-    }
+  private void testExternChangesNTI(String extern, String input, String expectedExtern,
+      DiagnosticType... warnings) {
+    TypeInferenceMode saved = this.mode;
+    this.mode = TypeInferenceMode.NTI_ONLY;
+    enableNewTypeInference();
+    super.testExternChanges(extern, input, expectedExtern, warnings);
+    disableNewTypeInference();
+    this.mode = saved;
   }
 
   void testWarningOtiNti(
@@ -165,5 +177,36 @@ public abstract class TypeICompilerTestCase extends CompilerTestCase {
     testWarning(js, ntiWarning);
     this.mode = saved;
   }
-}
 
+  @Override
+  protected Compiler getLastCompiler() {
+    switch (this.mode) {
+      case BOTH:
+        throw new AssertionError("getLastCompiler does not work correctly in BOTH mode.");
+      default:
+        return super.getLastCompiler();
+    }
+  }
+
+  // Helpers to test separate warnings/errors with OTI and NTI.
+
+  protected static OtiNtiDiagnostic warningOtiNti(DiagnosticType oti, DiagnosticType nti) {
+    return new OtiNtiDiagnostic(
+        oti != null ? warning(oti) : null, nti != null ? warning(nti) : null);
+  }
+
+  protected static OtiNtiDiagnostic diagnosticOtiNti(Diagnostic oti, Diagnostic nti) {
+    return new OtiNtiDiagnostic(oti, nti);
+  }
+
+  protected static class OtiNtiDiagnostic extends Diagnostic {
+    private final Diagnostic oti;
+    private final Diagnostic nti;
+
+    private OtiNtiDiagnostic(Diagnostic oti, Diagnostic nti) {
+      super(null, null, null);
+      this.oti = oti;
+      this.nti = nti;
+    }
+  }
+}

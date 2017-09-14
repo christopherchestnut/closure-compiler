@@ -16,7 +16,9 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.common.base.Preconditions;
+import static com.google.common.base.Preconditions.checkState;
+
+import com.google.common.annotations.GwtIncompatible;
 import com.google.common.collect.ImmutableList;
 import com.google.javascript.jscomp.parsing.ParserRunner;
 import com.google.javascript.jscomp.parsing.parser.FeatureSet;
@@ -49,7 +51,7 @@ public class JsAst implements SourceAst {
 
   @Override
   public Node getAstRoot(AbstractCompiler compiler) {
-    if (root == null) {
+    if (!isParsed()) {
       parse(compiler);
       root.setInputId(inputId);
     }
@@ -77,7 +79,7 @@ public class JsAst implements SourceAst {
 
   @Override
   public void setSourceFile(SourceFile file) {
-    Preconditions.checkState(fileName.equals(file.getName()));
+    checkState(fileName.equals(file.getName()));
     sourceFile = file;
   }
 
@@ -138,6 +140,10 @@ public class JsAst implements SourceAst {
     }
   }
 
+  boolean isParsed() {
+    return root != null;
+  }
+
   private void parse(AbstractCompiler compiler) {
     RecordingReporterProxy reporter = new RecordingReporterProxy(
         compiler.getDefaultErrorReporter());
@@ -156,11 +162,13 @@ public class JsAst implements SourceAst {
       if (compiler.getOptions().preservesDetailedSourceInfo()) {
         compiler.addComments(sourceFile.getName(), result.comments);
       }
-      if (result.sourceMap != null) {
-        String sourceMapName = sourceFile.getName() + ".inline.map";
-        SourceMapInput sourceMapInput =
-            new SourceMapInput(SourceFile.fromCode(sourceMapName, result.sourceMap));
-        compiler.addInputSourceMap(sourceFile.getName(), sourceMapInput);
+      if (result.sourceMapURL != null && compiler.getOptions().resolveSourceMapAnnotations) {
+        boolean parseInline = compiler.getOptions().parseInlineSourceMaps;
+        SourceFile sourceMapSourceFile =
+            SourceMapResolver.extractSourceMap(sourceFile, result.sourceMapURL, parseInline);
+        if (sourceMapSourceFile != null) {
+          compiler.addInputSourceMap(sourceFile.getName(), new SourceMapInput(sourceMapSourceFile));
+        }
       }
     } catch (IOException e) {
       compiler.report(
@@ -183,5 +191,16 @@ public class JsAst implements SourceAst {
     // Set the source name so that the compiler passes can track
     // the source file and module.
     root.setStaticSourceFile(sourceFile);
+  }
+
+  @GwtIncompatible("ObjectinputStream")
+  private void readObject(java.io.ObjectInputStream in) throws IOException, ClassNotFoundException {
+    AbstractCompiler compiler = ((HasCompiler) in).getCompiler();
+    in.defaultReadObject();
+    // Retrieve the code from the compiler object.
+    CompilerInput input = compiler.getInput(inputId);
+    if (input != null) {
+      sourceFile.restoreFrom(input.getSourceFile());
+    }
   }
 }

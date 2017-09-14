@@ -54,6 +54,198 @@ SourceInfo.prototype.facing;
 
 /**
  * @interface
+ * @see https://w3c.github.io/mediacapture-image/#mediasettingsrange-section
+ */
+function MediaSettingsRange() {}
+
+/**
+ * @type {number}
+ * @const
+ */
+MediaSettingsRange.prototype.max;
+
+/**
+ * @type {number}
+ * @const
+ */
+MediaSettingsRange.prototype.min;
+
+/**
+ * @type {number}
+ * @const
+ */
+MediaSettingsRange.prototype.step;
+
+/**
+ * @interface
+ * @see https://www.w3.org/TR/mediacapture-streams/#idl-def-MediaTrackCapabilities
+ * @see https://w3c.github.io/mediacapture-image/#mediatrackcapabilities-section
+ */
+function MediaTrackCapabilities() {}
+
+/** @type {number} */
+MediaTrackCapabilities.prototype.width;
+
+/** @type {number} */
+MediaTrackCapabilities.prototype.height;
+
+/** @type {number} */
+MediaTrackCapabilities.prototype.aspectRatio;
+
+/** @type {number} */
+MediaTrackCapabilities.prototype.frameRate;
+
+/** @type {!Array<string>} */
+MediaTrackCapabilities.prototype.facingMode;
+
+/** @type {number} */
+MediaTrackCapabilities.prototype.volume;
+
+/** @type {number} */
+MediaTrackCapabilities.prototype.sampleRate;
+
+/** @type {number} */
+MediaTrackCapabilities.prototype.sampleSize;
+
+/** @type {!Array<boolean>} */
+MediaTrackCapabilities.prototype.echoCancellation;
+
+/** @type {number} */
+MediaTrackCapabilities.prototype.latency;
+
+/** @type {number} */
+MediaTrackCapabilities.prototype.channelCount;
+
+/** @type {string} */
+MediaTrackCapabilities.prototype.deviceId;
+
+/** @type {string} */
+MediaTrackCapabilities.prototype.groupId;
+
+/** @type {!Array<string>} */
+MediaTrackCapabilities.prototype.whiteBalanceMode;
+
+/** @type {!Array<string>} */
+MediaTrackCapabilities.prototype.exposureMode;
+
+/** @type {!Array<string>} */
+MediaTrackCapabilities.prototype.focusMode;
+
+/** @type {!MediaSettingsRange} */
+MediaTrackCapabilities.prototype.exposureCompensation;
+
+/** @type {!MediaSettingsRange} */
+MediaTrackCapabilities.prototype.colorTemperature
+
+/** @type {!MediaSettingsRange} */
+MediaTrackCapabilities.prototype.iso
+
+/** @type {!MediaSettingsRange} */
+MediaTrackCapabilities.prototype.brightness
+
+/** @type {!MediaSettingsRange} */
+MediaTrackCapabilities.prototype.contrast
+
+/** @type {!MediaSettingsRange} */
+MediaTrackCapabilities.prototype.saturation
+
+/** @type {!MediaSettingsRange} */
+MediaTrackCapabilities.prototype.sharpness
+
+/** @type {!MediaSettingsRange} */
+MediaTrackCapabilities.prototype.zoom
+
+/** @type {boolean} */
+MediaTrackCapabilities.prototype.torch
+
+/**
+ * @interface
+ * @see https://www.w3.org/TR/mediacapture-streams/#media-track-settings
+ * @see https://w3c.github.io/mediacapture-image/#mediatracksettings-section
+ */
+function MediaTrackSettings() {}
+
+/** @type {number} */
+MediaTrackSettings.prototype.width;
+
+/** @type {number} */
+MediaTrackSettings.prototype.height;
+
+/** @type {number} */
+MediaTrackSettings.prototype.aspectRatio;
+
+/** @type {number} */
+MediaTrackSettings.prototype.frameRate;
+
+/** @type {string} */
+MediaTrackSettings.prototype.facingMode;
+
+/** @type {number} */
+MediaTrackSettings.prototype.volume;
+
+/** @type {number} */
+MediaTrackSettings.prototype.sampleRate;
+
+/** @type {number} */
+MediaTrackSettings.prototype.sampleSize;
+
+/** @type {boolean} */
+MediaTrackSettings.prototype.echoCancellation;
+
+/** @type {number} */
+MediaTrackSettings.prototype.latency;
+
+/** @type {number} */
+MediaTrackSettings.prototype.channelCount;
+
+/** @type {string} */
+MediaTrackSettings.prototype.deviceId;
+
+/** @type {string} */
+MediaTrackSettings.prototype.groupId;
+
+/** @type {string} */
+MediaTrackSettings.prototype.whiteBalanceMode;
+
+/** @type {string} */
+MediaTrackSettings.prototype.exposureMode;
+
+/** @type {string} */
+MediaTrackSettings.prototype.focusMode;
+
+/** @type {!Array<{x: number, y: number}>} */
+MediaTrackSettings.prototype.pointsOfInterest;
+
+/** @type {number} */
+MediaTrackSettings.prototype.exposureCompensation;
+
+/** @type {number} */
+MediaTrackSettings.prototype.colorTemperature
+
+/** @type {number} */
+MediaTrackSettings.prototype.iso
+
+/** @type {number} */
+MediaTrackSettings.prototype.brightness
+
+/** @type {number} */
+MediaTrackSettings.prototype.contrast
+
+/** @type {number} */
+MediaTrackSettings.prototype.saturation
+
+/** @type {number} */
+MediaTrackSettings.prototype.sharpness
+
+/** @type {number} */
+MediaTrackSettings.prototype.zoom
+
+/** @type {boolean} */
+MediaTrackSettings.prototype.torch
+
+
+/**
+ * @interface
  * @extends {EventTarget}
  * @see https://www.w3.org/TR/mediacapture-streams/#mediastreamtrack
  */
@@ -153,6 +345,15 @@ MediaStreamTrack.prototype.clone = function() {};
 
 /** @return {void} */
 MediaStreamTrack.prototype.stop = function() {};
+
+/** @return {!MediaTrackCapabilities} */
+MediaStreamTrack.prototype.getCapabilities = function() {};
+
+/** @return {!MediaTrackConstraints} */
+MediaStreamTrack.prototype.getConstraints = function() {};
+
+/** @return {!MediaTrackSettings} */
+MediaStreamTrack.prototype.getSettings = function() {};
 
 /**
  * @typedef {{track: MediaStreamTrack}}
@@ -323,6 +524,12 @@ RTCRtpSender.prototype.replaceTrack = function(track) {};
 
 
 /**
+ * @return {!Object}
+ */
+RTCRtpSender.prototype.getParameters = function() {};
+
+
+/**
  * @param {!Object} params
  * @return {!Promise<undefined>}
  */
@@ -380,136 +587,239 @@ RTCRtpTransceiver.prototype.sender;
 RTCRtpTransceiver.prototype.receiver;
 
 /**
- * This interface defines the available constraint attributes.  These are the
- * attributes defined in
- * {@see http://tools.ietf.org/html/draft-alvestrand-constraints-resolution-01}.
- * Note that although that draft refers to "Media Constraints", the W3C uses
- * the terms "Media[Stream|Track]Constraints" for this type, and
- * defines a different type (for RTCPeerConnection) called "MediaConstraints".
- *
- * This interface type is not part of any standard, so it is marked as private.
- * It is defined here in order to reserve the property names, which would
- * otherwise be rewritten when the compiler processes an object literal.
- * Several subsequent interfaces are defined in the same pattern.
- *
- * Note that although this list includes all the properties supported by
- * libjingle (and hence by Chromium), browsers are permitted to offer other
- * properties as well ({
- * @see http://tools.ietf.org/html/draft-burnett-rtcweb-constraints-registry-02
- * }), and browsers are expected to silently ignore unknown properties.  This
- * creates the potential for a very confusing situation in which properties
- * not listed here are renamed by the compiler and then ignored by the browser.
- *
- * @interface
+ * @see https://w3c.github.io/mediacapture-main/getusermedia.html#dom-longrange
+ * @record
+ */
+function LongRange() {}
+
+/**
+ * @type {number|undefined}
+ */
+LongRange.prototype.max;
+
+/**
+ * @type {number|undefined}
+ */
+LongRange.prototype.min;
+
+/**
+ * @see https://w3c.github.io/mediacapture-main/getusermedia.html#dom-doublerange
+ * @record
+ */
+function DoubleRange() {}
+
+/**
+ * @type {number|undefined}
+ */
+DoubleRange.prototype.max;
+
+/**
+ * @type {number|undefined}
+ */
+DoubleRange.prototype.min;
+
+
+/**
+ * @see https://w3c.github.io/mediacapture-main/getusermedia.html#dom-constrainbooleanparameters
+ * @record
+ */
+function ConstrainBooleanParameters() {}
+
+/**
+ * @type {boolean|undefined}
+ */
+ConstrainBooleanParameters.prototype.exact;
+
+/**
+ * @type {boolean|undefined}
+ */
+ConstrainBooleanParameters.prototype.ideal;
+
+/**
+ * @see https://w3c.github.io/mediacapture-main/getusermedia.html#dom-constraindomstringparameters
+ * @record
+ */
+function ConstrainDOMStringParameters() {}
+
+/**
+ * @type {string|Array<string>|undefined}
+ */
+ConstrainDOMStringParameters.prototype.exact;
+
+/**
+ * @type {string|Array<string>|undefined}
+ */
+ConstrainDOMStringParameters.prototype.ideal;
+
+/**
+ * @see https://w3c.github.io/mediacapture-main/getusermedia.html#dom-constraindoublerange
+ * @record
+ * @extends {DoubleRange}
+ */
+function ConstrainDoubleRange() {}
+
+/**
+ * @type {number|undefined}
+ */
+ConstrainDoubleRange.prototype.exact;
+
+/**
+ * @type {number|undefined}
+ */
+ConstrainDoubleRange.prototype.ideal;
+
+
+/**
+ * @see https://w3c.github.io/mediacapture-main/getusermedia.html#dom-constrainlongrange
+ * @record
+ * @extends {LongRange}
+ */
+function ConstrainLongRange() {}
+
+/**
+ * @type {number|undefined}
+ */
+ConstrainLongRange.prototype.exact;
+
+/**
+ * @type {number|undefined}
+ */
+ConstrainLongRange.prototype.ideal;
+
+/**
+ * @see https://w3c.github.io/mediacapture-main/getusermedia.html#dom-constrainboolean
+ * @typedef {boolean|ConstrainBooleanParameters}
+ */
+var ConstrainBoolean;
+
+/**
+ * @see https://w3c.github.io/mediacapture-main/getusermedia.html#dom-constraindomString
+ * @typedef {string|Array<string>|ConstrainDOMStringParameters}
+ */
+var ConstrainDOMString;
+
+/**
+ * @see https://w3c.github.io/mediacapture-main/getusermedia.html#dom-constraindouble
+ * @typedef {number|ConstrainDoubleRange}
+ */
+var ConstrainDouble;
+
+/**
+ * @see https://w3c.github.io/mediacapture-main/getusermedia.html#dom-constrainlong
+ * @typedef {number|ConstrainLongRange}
+ */
+var ConstrainLong;
+
+
+/**
+ * @see https://w3c.github.io/mediacapture-main/getusermedia.html#dom-mediatrackconstraintset
+ * @record
  * @private
  */
-function MediaTrackConstraintSetInterface_() {}
+function MediaTrackConstraintSet() {}
 
 /**
- * @type {?string}
+ * @type {ConstrainBoolean|undefined}
  */
-MediaTrackConstraintSetInterface_.prototype.chromeMediaSource;
+MediaTrackConstraintSet.prototype.autoGainControl;
 
 /**
- * @type {?boolean}
+ * @type {ConstrainDouble|undefined}
  */
-MediaTrackConstraintSetInterface_.prototype.echoCancellation;
+MediaTrackConstraintSet.prototype.aspectRatio;
 
 /**
- * @type {?number}
+ * @type {ConstrainLong|undefined}
  */
-MediaTrackConstraintSetInterface_.prototype.minWidth;
+MediaTrackConstraintSet.prototype.channelCount;
 
 /**
- * @type {?number}
+ * @type {ConstrainDOMString|undefined}
  */
-MediaTrackConstraintSetInterface_.prototype.maxWidth;
+MediaTrackConstraintSet.prototype.deviceId;
 
 /**
- * @type {?number}
+ * @type {ConstrainBoolean|undefined}
  */
-MediaTrackConstraintSetInterface_.prototype.minHeight;
+MediaTrackConstraintSet.prototype.echoCancellation;
 
 /**
- * @type {?number}
+ * @type {ConstrainDOMString|undefined}
  */
-MediaTrackConstraintSetInterface_.prototype.maxHeight;
+MediaTrackConstraintSet.prototype.facingMode;
 
 /**
- * @type {?number}
+ * @type {ConstrainDouble|undefined}
  */
-MediaTrackConstraintSetInterface_.prototype.minAspectRatio;
+MediaTrackConstraintSet.prototype.frameRate;
 
 /**
- * @type {?number}
+ * @type {ConstrainDOMString|undefined}
  */
-MediaTrackConstraintSetInterface_.prototype.maxAspectRatio;
+MediaTrackConstraintSet.prototype.groupId;
 
 /**
- * Due to a typo, this is called "minFramerate" in the -01 draft.
- * @type {?number}
+ * @type {ConstrainLong|undefined}
  */
-MediaTrackConstraintSetInterface_.prototype.minFrameRate;
+MediaTrackConstraintSet.prototype.height;
 
 /**
- * @type {?number}
+ * @type {ConstrainDouble|undefined}
  */
-MediaTrackConstraintSetInterface_.prototype.maxFrameRate;
+MediaTrackConstraintSet.prototype.latency;
 
 /**
- * @type {?string}
+ * @type {ConstrainBoolean|undefined}
  */
-MediaTrackConstraintSetInterface_.prototype.sourceId;
+MediaTrackConstraintSet.prototype.noiseSuppression;
 
 /**
- * This type and two more below are defined as unions with Object because they
- * are normally used as record types by constructing an Object literal, but all
- * of their properties are optional.
- * @typedef {Object|MediaTrackConstraintSetInterface_}
+ * @type {ConstrainLong|undefined}
  */
-var MediaTrackConstraintSet;
+MediaTrackConstraintSet.prototype.sampleRate;
 
 /**
- * @interface
- * @private
+ * @type {ConstrainLong|undefined}
  */
-function MediaTrackConstraintsInterface_() {}
+MediaTrackConstraintSet.prototype.sampleSize;
 
 /**
- * @type {?MediaTrackConstraintSet}
+ * @type {ConstrainDouble|undefined}
  */
-MediaTrackConstraintsInterface_.prototype.mandatory;
+MediaTrackConstraintSet.prototype.volume;
 
 /**
- * @type {?Array<!MediaTrackConstraintSet>}
+ * @type {ConstrainLong|undefined}
  */
-MediaTrackConstraintsInterface_.prototype.optional;
+MediaTrackConstraintSet.prototype.width;
+
 
 /**
- * @typedef {Object|MediaTrackConstraintsInterface_}
+ * @record
+ * @extends {MediaTrackConstraintSet}
  */
-var MediaTrackConstraints;
+function MediaTrackConstraints() {}
 
 /**
- * @interface
- * @private
+ * @type {Array<!MediaTrackConstraintSet>|undefined}
  */
-function MediaStreamConstraintsInterface_() {}
+MediaTrackConstraints.prototype.advanced;
 
 /**
- * @type {boolean|MediaTrackConstraints}
+ * @see https://w3c.github.io/mediacapture-main/getusermedia.html#media-track-constraints
+ * @record
  */
-MediaStreamConstraintsInterface_.prototype.audio;
+function MediaStreamConstraints() {}
 
 /**
- * @type {boolean|MediaTrackConstraints}
+ * @type {boolean|MediaTrackConstraints|undefined}
  */
-MediaStreamConstraintsInterface_.prototype.video;
+MediaStreamConstraints.prototype.audio;
 
 /**
- * @typedef {Object|MediaStreamConstraintsInterface_}
+ * @type {boolean|MediaTrackConstraints|undefined}
  */
-var MediaStreamConstraints;
+MediaStreamConstraints.prototype.video;
 
 /**
  * @see {http://dev.w3.org/2011/webrtc/editor/getusermedia.html#
@@ -575,6 +885,214 @@ function MediaStreamEvent(type, eventInitDict) {}
  * @const
  */
 MediaStreamEvent.prototype.stream;
+
+/**
+ * @record
+ * @see https://www.w3.org/TR/mediastream-recording/#dictdef-mediarecorderoptions
+ */
+function MediaRecorderOptions() {}
+
+/** @type {(string|undefined)} */
+MediaRecorderOptions.prototype.mimeType
+
+/** @type {(number|undefined)} */
+MediaRecorderOptions.prototype.audioBitsPerSecond
+
+/** @type {(number|undefined)} */
+MediaRecorderOptions.prototype.videoBitsPerSecond
+
+/** @type {(number|undefined)} */
+MediaRecorderOptions.prototype.bitsPerSecond
+
+/**
+ * @see https://www.w3.org/TR/mediastream-recording/#mediarecorder-api
+ * @param {!MediaStream} stream
+ * @param {MediaRecorderOptions=} options
+ * @implements {EventTarget}
+ * @constructor
+ */
+function MediaRecorder(stream, options) {}
+
+/**
+ * @override
+ */
+MediaRecorder.prototype.addEventListener = function(type, listener,
+    opt_useCapture) {};
+
+/**
+ * @override
+ */
+MediaRecorder.prototype.removeEventListener = function(type, listener,
+    opt_useCapture) {};
+
+/**
+ * @override
+ * @return {boolean}
+ */
+MediaRecorder.prototype.dispatchEvent = function(evt) {};
+
+/**
+ * @type {!MediaStream}
+ */
+MediaRecorder.prototype.stream;
+
+/**
+ * @type {string}
+ */
+MediaRecorder.prototype.mimeType;
+
+/**
+ * @type {string}
+ */
+MediaRecorder.prototype.state;
+
+/**
+ * @type {(function(!Event)|undefined)}
+ */
+MediaRecorder.prototype.onstart;
+
+/**
+ * @type {(function(!Event)|undefined)}
+ */
+MediaRecorder.prototype.onstop;
+
+/**
+ * @type {(function(!Event)|undefined)}
+ */
+MediaRecorder.prototype.ondataavailable;
+
+/**
+ * @type {(function(!Event)|undefined)}
+ */
+MediaRecorder.prototype.onpause;
+
+/**
+ * @type {(function(!Event)|undefined)}
+ */
+MediaRecorder.prototype.onresume;
+
+/**
+ * @type {(function(!Event)|undefined)}
+ */
+MediaRecorder.prototype.onerror;
+
+/**
+ * @type {number}
+ */
+MediaRecorder.prototype.videoBitsPerSecond;
+
+/**
+ * @type {number}
+ */
+MediaRecorder.prototype.audioBitsPerSecond;
+
+/**
+ * @param {number=} timeslice
+ */
+MediaRecorder.prototype.start = function(timeslice) {};
+
+/** @return {void} */
+MediaRecorder.prototype.stop = function() {};
+
+/** @return {void} */
+MediaRecorder.prototype.pause = function() {};
+
+/** @return {void} */
+MediaRecorder.prototype.resume = function() {};
+
+/** @return {void} */
+MediaRecorder.prototype.requestData = function() {};
+
+/**
+ * @param {string} type
+ * @return {boolean}
+ */
+MediaRecorder.isTypeSupported = function(type) {};
+
+/**
+ * @interface
+ * @see https://w3c.github.io/mediacapture-image/##photosettings-section
+ */
+function PhotoSettings() {}
+
+/**
+ * @type {string}
+ */
+PhotoSettings.prototype.fillLightMode;
+
+/**
+ * @type {number}
+ */
+PhotoSettings.prototype.imageHeight;
+
+/**
+ * @type {number}
+ */
+PhotoSettings.prototype.imageWidth;
+
+/**
+ * @type {boolean}
+ */
+PhotoSettings.prototype.redEyeReduction;
+
+/**
+ * @interface
+ * @see https://w3c.github.io/mediacapture-image/##photocapabilities-section
+ */
+function PhotoCapabilities() {}
+
+/**
+ * @type {string}
+ * @const
+ */
+PhotoCapabilities.prototype.redEyeReduction;
+
+/**
+ * @type {!MediaSettingsRange}
+ * @const
+ */
+PhotoCapabilities.prototype.imageHeight;
+
+/**
+ * @type {!MediaSettingsRange}
+ * @const
+ */
+PhotoCapabilities.prototype.imageWidth;
+
+/**
+ * @type {!Array<!string>}
+ * @const
+ */
+PhotoCapabilities.prototype.fillLightMode;
+
+/**
+ * @see https://w3c.github.io/mediacapture-image/
+ * @param {!MediaStreamTrack} videoTrack
+ * @constructor
+ */
+function ImageCapture(videoTrack) {}
+
+/**
+ * @param {!PhotoSettings=} photoSettings
+ * @return {!Promise<!Blob>}
+ */
+ImageCapture.prototype.takePhoto = function(photoSettings) {};
+
+/**
+ * @return {!Promise<!PhotoCapabilities>}
+ */
+ImageCapture.prototype.getPhotoCapabilities = function() {};
+
+/**
+ * @return {!Promise<!ImageBitmap>}
+ */
+ImageCapture.prototype.grabFrame = function() {};
+
+/**
+ * @type {!MediaStreamTrack}
+ * @const
+ */
+ImageCapture.prototype.track;
 
 /**
  * @see https://www.w3.org/TR/webrtc/#rtctrackevent
@@ -1092,7 +1610,28 @@ function RTCDataChannelInitInterface_() {}
 RTCDataChannelInitInterface_.prototype.reliable;
 
 /**
- * @typedef {RTCDataChannelInitInterface_|RTCDataChannelInitRecord_}
+ * @typedef {Object}
+ * @property {boolean=} [ordered=true]
+ * @property {number=} maxPacketLifeTime
+ * @property {number=} maxRetransmits
+ * @property {string=} [protocol=""]
+ * @property {boolean=} [negotiated=false]
+ * @property {number=} id
+ * @property {string=} [priority='low']
+ * see https://www.w3.org/TR/webrtc/#dom-rtcdatachannelinit for documentation
+ * Type inconsistencies due to Closure limitations:
+ * maxPacketLifeTime should be UnsignedShort
+ * maxRetransmits should be UnsignedShort
+ * protocol should be USVString
+ * id should be UnsignedShort
+ * In WebIDL priority is an enum with values 'very-low', 'low',
+ * 'medium' and 'high', but there is no mechanism in Closure for describing
+ * a specialization of the string type.
+ */
+var RTCDataChannelInitDictionary_;
+
+/**
+ * @typedef {RTCDataChannelInitInterface_|RTCDataChannelInitRecord_|RTCDataChannelInitDictionary_}
  */
 var RTCDataChannelInit;
 
@@ -1287,12 +1826,14 @@ RTCPeerConnection.prototype.removeTrack = function(sender) {};
 
 // TODO(bemasc): Add identity provider stuff once implementations exist
 
+// TODO(rjogrady): Per w3c spec, getStats() should always return a Promise.
+// Remove RTCStatsReport from the return value once Firefox supports that.
 /**
  * Firefox' getstats is synchronous and returns a much simpler
  * {!RTCStatsReport} Map-like object.
  * @param {!RTCStatsCallback=} successCallback
  * @param {MediaStreamTrack=} selector
- * @return {undefined|!RTCStatsReport}
+ * @return {undefined|!RTCStatsReport|!Promise<!RTCStatsReport>}
  */
 RTCPeerConnection.prototype.getStats = function(successCallback, selector) {};
 

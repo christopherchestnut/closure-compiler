@@ -16,6 +16,9 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.common.base.Preconditions;
 import com.google.debugging.sourcemap.Util;
 import com.google.javascript.rhino.JSDocInfo.Visibility;
@@ -77,9 +80,12 @@ public class CodeGenerator {
     this.jsDocInfoPrinter = new JSDocInfoPrinter(useOriginalName);
   }
 
-  /**
-   * Insert a top-level @externs comment.
-   */
+  /** Insert a top-level identifying file as .i.js generated typing file. */
+  void tagAsTypeSummary() {
+    add("/** @fileoverview @typeSummary */\n");
+  }
+
+  /** Insert a top-level @externs comment. */
   public void tagAsExterns() {
     add("/** @externs */\n");
   }
@@ -89,6 +95,7 @@ public class CodeGenerator {
    */
   public void tagAsStrict() {
     add("'use strict';");
+    cc.endLine();
   }
 
   protected void add(String str) {
@@ -159,9 +166,8 @@ public class CodeGenerator {
     switch (type) {
       case TRY:
         {
-          Preconditions.checkState(
-              first.getNext().isNormalBlock() && !first.getNext().hasMoreThanOneChild());
-          Preconditions.checkState(childCount >= 2 && childCount <= 3);
+          checkState(first.getNext().isNormalBlock() && !first.getNext().hasMoreThanOneChild());
+          checkState(childCount >= 2 && childCount <= 3);
 
           add("try");
           add(first);
@@ -209,7 +215,7 @@ public class CodeGenerator {
           cc.maybeInsertSpace();
           add(first);
         } else {
-          Preconditions.checkState(childCount == 0);
+          checkState(childCount == 0);
         }
         cc.endStatement();
         break;
@@ -246,7 +252,7 @@ public class CodeGenerator {
       case DESTRUCTURING_LHS:
         add(first);
         if (first != last) {
-          Preconditions.checkState(childCount == 2);
+          checkState(childCount == 2);
           cc.addOp("=", true);
           add(last);
         }
@@ -262,7 +268,7 @@ public class CodeGenerator {
         maybeAddTypeDecl(n);
 
         if (first != null && !first.isEmpty()) {
-          Preconditions.checkState(childCount == 1);
+          checkState(childCount == 1);
           cc.addOp("=", true);
           if (first.isComma() || (first.isCast() && first.getFirstChild().isComma())) {
             addExpr(first, NodeUtil.precedence(Token.ASSIGN), Context.OTHER);
@@ -318,7 +324,7 @@ public class CodeGenerator {
       case POS:
         {
           // All of these unary operators are right-associative
-          Preconditions.checkState(childCount == 1);
+          checkState(childCount == 1);
           cc.addOp(NodeUtil.opToStrNoFail(type), false);
           addExpr(first, NodeUtil.precedence(type), Context.OTHER);
           break;
@@ -326,7 +332,7 @@ public class CodeGenerator {
 
       case NEG:
         {
-          Preconditions.checkState(childCount == 1);
+          checkState(childCount == 1);
 
           // It's important to our sanity checker that the code
           // we print produces the same AST as the code we parse back.
@@ -343,7 +349,7 @@ public class CodeGenerator {
 
       case HOOK:
         {
-          Preconditions.checkState(childCount == 3);
+          checkState(childCount == 3);
           int p = NodeUtil.precedence(type);
           Context rhsContext = getContextForNoInOperator(context);
           addExpr(first, p + 1, context);
@@ -365,23 +371,24 @@ public class CodeGenerator {
         if (childCount == 2) {
           add(regexp + last.getString());
         } else {
-          Preconditions.checkState(childCount == 1);
+          checkState(childCount == 1);
           add(regexp);
         }
         break;
 
-      case FUNCTION: {
-        if (n.getClass() != Node.class) {
-          throw new Error("Unexpected Node subclass.");
+      case FUNCTION:
+        {
+          if (n.getClass() != Node.class) {
+            throw new Error("Unexpected Node subclass.");
+          }
+          checkState(childCount == 3);
+          if (n.isArrowFunction()) {
+            addArrowFunction(n, first, last, context);
+          } else {
+            addFunction(n, first, last, context);
+          }
+          break;
         }
-        Preconditions.checkState(childCount == 3);
-        if (n.isArrowFunction()) {
-          addArrowFunction(n, first, last, context);
-        } else {
-          addFunction(n, first, last, context);
-        }
-        break;
-      }
       case REST:
         add("...");
         add(first);
@@ -400,7 +407,7 @@ public class CodeGenerator {
         }
         if (n.getBooleanProp(Node.EXPORT_ALL_FROM)) {
           add("*");
-          Preconditions.checkState(first != null && first.isEmpty());
+          checkState(first != null && first.isEmpty());
         } else {
           add(first);
         }
@@ -461,7 +468,7 @@ public class CodeGenerator {
         // CLASS -> NAME,EXPR|EMPTY,BLOCK
       case CLASS:
         {
-          Preconditions.checkState(childCount == 3);
+          checkState(childCount == 3);
           boolean classNeedsParens = (context == Context.START_OF_EXPR);
           if (classNeedsParens) {
             add("(");
@@ -530,7 +537,7 @@ public class CodeGenerator {
       case MEMBER_FUNCTION_DEF:
       case MEMBER_VARIABLE_DEF:
         {
-          Preconditions.checkState(
+          checkState(
               n.getParent().isObjectLit()
                   || n.getParent().isClassMembers()
                   || n.getParent().isInterfaceMembers()
@@ -543,7 +550,7 @@ public class CodeGenerator {
           }
 
           if (!n.isMemberVariableDef() && n.getFirstChild().isGeneratorFunction()) {
-            Preconditions.checkState(type == Token.MEMBER_FUNCTION_DEF);
+            checkState(type == Token.MEMBER_FUNCTION_DEF);
             add("*");
           }
 
@@ -577,11 +584,11 @@ public class CodeGenerator {
             maybeAddOptional(n);
             maybeAddTypeDecl(n);
           } else {
-            Preconditions.checkState(childCount == 1);
-            Preconditions.checkState(first.isFunction());
+            checkState(childCount == 1);
+            checkState(first.isFunction());
 
             // The function referenced by the definition should always be unnamed.
-            Preconditions.checkState(first.getFirstChild().getString().isEmpty());
+            checkState(first.getFirstChild().getString().isEmpty());
 
             Node fn = first;
             Node parameters = fn.getSecondChild();
@@ -742,7 +749,7 @@ public class CodeGenerator {
           }
           Preconditions.checkState(
               childCount == 2, "Bad GETPROP: expected 2 children, but got %s", childCount);
-          Preconditions.checkState(last.isString(), "Bad GETPROP: RHS should be STRING");
+          checkState(last.isString(), "Bad GETPROP: RHS should be STRING");
           boolean needsParens = (first.isNumber());
           if (needsParens) {
             add("(");
@@ -783,7 +790,7 @@ public class CodeGenerator {
       case INC:
       case DEC:
         {
-          Preconditions.checkState(childCount == 1);
+          checkState(childCount == 1);
           String o = type == Token.INC ? "++" : "--";
           boolean postProp = n.getBooleanProp(Node.INCRDECR_PROP);
           if (postProp) {
@@ -869,8 +876,8 @@ public class CodeGenerator {
 
       case YIELD:
         add("yield");
-        if (n.isYieldFor()) {
-          Preconditions.checkNotNull(first);
+        if (n.isYieldAll()) {
+          checkNotNull(first);
           add("*");
         }
         if (first != null) {
@@ -980,12 +987,7 @@ public class CodeGenerator {
               cc.listSeparator();
             }
 
-            Preconditions.checkState(
-                c.isComputedProp()
-                    || c.isGetterDef()
-                    || c.isSetterDef()
-                    || c.isStringKey()
-                    || c.isMemberFunctionDef());
+            checkState(NodeUtil.isObjLitProperty(c));
             add(c);
           }
           add("}");
@@ -1032,14 +1034,14 @@ public class CodeGenerator {
           Node initializer = first.getNext();
           if (initializer != null) {
             // Object literal value.
-            Preconditions.checkState(
+            checkState(
                 !isInClass, "initializers should only exist in object literals, not classes");
             cc.addOp(":", false);
             add(initializer);
           } else {
             // Computed properties must either have an initializer or be computed member-variable
             // properties that exist for their type declaration.
-            Preconditions.checkState(n.getBooleanProp(Node.COMPUTED_PROP_VARIABLE), n);
+            checkState(n.getBooleanProp(Node.COMPUTED_PROP_VARIABLE), n);
           }
         }
         break;
@@ -1178,7 +1180,7 @@ public class CodeGenerator {
         break;
       case INTERFACE:
         {
-          Preconditions.checkState(childCount == 3);
+          checkState(childCount == 3);
           Node name = first;
           Node superTypes = first.getNext();
           Node members = last;
@@ -1201,7 +1203,7 @@ public class CodeGenerator {
         break;
       case ENUM:
         {
-          Preconditions.checkState(childCount == 2);
+          checkState(childCount == 2);
           Node name = first;
           Node members = last;
           add("enum");
@@ -1209,15 +1211,16 @@ public class CodeGenerator {
           add(members);
           break;
         }
-      case NAMESPACE: {
-        Preconditions.checkState(childCount == 2);
-        Node name = first;
-        Node elements = last;
-        add("namespace");
-        add(name);
-        add(elements);
-        break;
-      }
+      case NAMESPACE:
+        {
+          checkState(childCount == 2);
+          Node name = first;
+          Node elements = last;
+          add("namespace");
+          add(name);
+          add(elements);
+          break;
+        }
       case TYPE_ALIAS:
         add("type");
         add(n.getString());
@@ -1311,7 +1314,7 @@ public class CodeGenerator {
   }
 
   private void addArrowFunction(Node n, Node first, Node last, Context context) {
-    Preconditions.checkState(first.getString().isEmpty());
+    checkState(first.getString().isEmpty());
     boolean funcNeedsParens = arrowFunctionNeedsParens(n);
     if (funcNeedsParens) {
       add("(");
@@ -1454,8 +1457,7 @@ public class CodeGenerator {
    * @return Whether the name is an indirect eval.
    */
   private static boolean isIndirectEval(Node n) {
-    return n.isName() && "eval".equals(n.getString()) &&
-        !n.getBooleanProp(Node.DIRECT_EVAL);
+    return n.isName() && "eval".equals(n.getString()) && !n.getBooleanProp(Node.DIRECT_EVAL);
   }
 
   /**
@@ -1567,13 +1569,17 @@ public class CodeGenerator {
       // ExponentiationExpression cannot expand to
       //     UnaryExpression ** ExponentiationExpression
       return true;
-    } else if (n.isObjectLit() && n.getParent().isArrowFunction()) {
+    } else if (isObjectLitOrCastOfObjectLit(n) && n.getParent().isArrowFunction()) {
       // If the body of an arrow function is an object literal, the braces are treated as a
       // statement block with higher precedence, which we avoid with parentheses.
       return true;
     } else {
       return precedence(n) < minPrecedence;
     }
+  }
+
+  private boolean isObjectLitOrCastOfObjectLit(Node n) {
+    return n.isObjectLit() || (n.isCast() && n.getFirstChild().isObjectLit());
   }
 
   private boolean isFirstOperandOfExponentiationExpression(Node n) {
@@ -1665,7 +1671,7 @@ public class CodeGenerator {
   }
 
   void addCaseBody(Node caseBody) {
-    Preconditions.checkState(caseBody.isNormalBlock());
+    checkState(caseBody.isNormalBlock());
     cc.beginCaseBody();
     addAllSiblings(caseBody.getFirstChild());
     cc.endCaseBody();
@@ -1708,8 +1714,7 @@ public class CodeGenerator {
     String doublequote;
     String singlequote;
     char quote;
-    if (preferSingleQuotes ?
-        (singleq <= doubleq) : (singleq < doubleq)) {
+    if (preferSingleQuotes ? (singleq <= doubleq) : (singleq < doubleq)) {
       // more double quotes so enclose in single quotes.
       quote = '\'';
       doublequote = "\"";
@@ -1793,9 +1798,9 @@ public class CodeGenerator {
           // This is just to prevent developers from shooting themselves in the
           // foot, and does not provide the level of security that you get
           // with trustedString == false.
-          if (i >= 2 &&
-              ((s.charAt(i - 1) == '-' && s.charAt(i - 2) == '-') ||
-               (s.charAt(i - 1) == ']' && s.charAt(i - 2) == ']'))) {
+          if (i >= 2
+              && ((s.charAt(i - 1) == '-' && s.charAt(i - 2) == '-')
+                  || (s.charAt(i - 1) == ']' && s.charAt(i - 2) == ']'))) {
             sb.append(GT_ESCAPED);
           } else {
             sb.append(c);
@@ -1915,8 +1920,9 @@ public class CodeGenerator {
   }
 
   private static Context getContextForNonEmptyExpression(Context currentContext) {
-    return currentContext == Context.BEFORE_DANGLING_ELSE ?
-        Context.BEFORE_DANGLING_ELSE : Context.OTHER;
+    return currentContext == Context.BEFORE_DANGLING_ELSE
+        ? Context.BEFORE_DANGLING_ELSE
+        : Context.OTHER;
   }
 
   /**

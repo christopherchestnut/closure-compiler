@@ -28,7 +28,6 @@ public final class Es6ExternsCheckTest extends CompilerTestCase {
 
   public Es6ExternsCheckTest() {
     super(EXTERNS_BASE);
-    allowSourcelessWarnings();
   }
 
   @Override
@@ -37,15 +36,16 @@ public final class Es6ExternsCheckTest extends CompilerTestCase {
   }
 
   @Override
-  NoninjectingCompiler getLastCompiler() {
+  protected NoninjectingCompiler getLastCompiler() {
     return (NoninjectingCompiler) super.getLastCompiler();
   }
 
   @Override
-  public void setUp() {
+  protected void setUp() throws Exception {
+    super.setUp();
     setAcceptedLanguage(LanguageMode.ECMASCRIPT_2015);
     setLanguageOut(LanguageMode.ECMASCRIPT3);
-    allowExternsChanges(false);
+    allowSourcelessWarnings();
   }
 
   @Override
@@ -64,7 +64,7 @@ public final class Es6ExternsCheckTest extends CompilerTestCase {
   }
 
   public void testEs6ONoEs6() {
-    allowExternsChanges(true);  // adding Symbol
+    allowExternsChanges();  // adding Symbol
     // Don't report the missing externs if the project does not includes files with ES6 syntax.
     testSame("var x = {};");
   }

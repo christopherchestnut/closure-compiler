@@ -200,7 +200,7 @@ angular.reloadWithDebugInfo = function() {};
 
 /**
  * @param {Object|Array|Date|string|number|boolean} obj
- * @param {boolean=} opt_pretty
+ * @param {number|boolean=} opt_pretty
  * @return {string}
  */
 angular.toJson = function(obj, opt_pretty) {};
@@ -1891,7 +1891,8 @@ angular.$location.prototype.protocol = function() {};
 angular.$location.prototype.replace = function() {};
 
 /**
- * @param {(string|Object<string, string>)=} opt_search
+ * @param {(string|Object.<string, string>|Object.<string, Array.<string>>)=}
+ *     opt_search
  * @param {?(string|Array<string>|boolean|number)=} opt_paramValue
  * @return {(!Object|!angular.$location)}
  */
@@ -2298,7 +2299,7 @@ angular.$routeProvider.Params.prototype.controller;
 /** @type {string|undefined} */
 angular.$routeProvider.Params.prototype.controllerAs;
 
-/** @type {string|undefined} */
+/** @type {string|function(!Object<string, string>): string|undefined} */
 angular.$routeProvider.Params.prototype.template;
 
 /** @type {string|!Object|function(!Object<string,string>=)} */

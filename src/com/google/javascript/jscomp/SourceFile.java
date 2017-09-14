@@ -16,12 +16,12 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Strings.isNullOrEmpty;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.google.common.annotations.GwtIncompatible;
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
 import com.google.common.io.CharStreams;
 import com.google.common.io.Resources;
 import com.google.javascript.rhino.StaticSourceFile;
@@ -84,9 +84,9 @@ public class SourceFile implements StaticSourceFile, Serializable {
   private String originalPath = null;
 
   // Source Line Information
-  private int[] lineOffsets = null;
+  private transient int[] lineOffsets = null;
 
-  private String code = null;
+  private transient String code = null;
 
   static final DiagnosticType DUPLICATE_ZIP_CONTENTS = DiagnosticType.warning(
       "JSC_DUPLICATE_ZIP_CONTENTS",
@@ -369,12 +369,12 @@ public class SourceFile implements StaticSourceFile, Serializable {
   static final String JAR_URL_PREFIX = "jar:file:";
 
   private static boolean isZipEntry(String path) {
-    return path.contains(".zip!/") && path.endsWith(".js");
+    return path.contains(".zip!/") && (path.endsWith(".js") || path.endsWith(".js.map"));
   }
 
   @GwtIncompatible("java.io.File")
   private static SourceFile fromZipEntry(String zipURL, Charset inputCharset) {
-    Preconditions.checkArgument(isZipEntry(zipURL));
+    checkArgument(isZipEntry(zipURL));
     String[] components = zipURL.split(BANG_SLASH);
     try {
       String zipPath = components[0];
@@ -518,20 +518,16 @@ public class SourceFile implements StaticSourceFile, Serializable {
     }
 
     @GwtIncompatible("java.io.InputStream")
-    public SourceFile buildFromInputStream(String fileName, InputStream s)
-        throws IOException {
-      return buildFromCode(fileName,
-          CharStreams.toString(new InputStreamReader(s, charset)));
+    public SourceFile buildFromInputStream(String fileName, InputStream s) throws IOException {
+      return buildFromCode(fileName, CharStreams.toString(new InputStreamReader(s, charset)));
     }
 
     @GwtIncompatible("java.io.Reader")
-    public SourceFile buildFromReader(String fileName, Reader r)
-        throws IOException {
+    public SourceFile buildFromReader(String fileName, Reader r) throws IOException {
       return buildFromCode(fileName, CharStreams.toString(r));
     }
 
-    public SourceFile buildFromGenerator(String fileName,
-        Generator generator) {
+    public SourceFile buildFromGenerator(String fileName, Generator generator) {
       return new Generated(fileName, originalPath, generator);
     }
   }
@@ -558,8 +554,11 @@ public class SourceFile implements StaticSourceFile, Serializable {
    * from the injected interface.
    */
   static class Generated extends SourceFile {
-    private static final long serialVersionUID = 1L;
-    private final Generator generator;
+    // Avoid serializing generator and remove the burden to make classes that implement
+    // Generator serializable. There should be no need to obtain generated source in the
+    // second stage of compilation. Making the generator transient relies on not clearing the
+    // code cache for these classes up serialization which might be quite wasteful.
+    private transient Generator generator;
 
     // Not private, so that LazyInput can extend it.
     Generated(String fileName, String originalPath, Generator generator) {
@@ -584,6 +583,12 @@ public class SourceFile implements StaticSourceFile, Serializable {
     @Override
     public void clearCachedSource() {
       super.setCode(null);
+    }
+
+    @Override
+    public void restoreFrom(SourceFile sourceFile) {
+      super.restoreFrom(sourceFile);
+      this.generator = ((Generated) sourceFile).generator;
     }
   }
 
@@ -611,8 +616,8 @@ public class SourceFile implements StaticSourceFile, Serializable {
       String cachedCode = super.getCode();
 
       if (cachedCode == null) {
-        try {
-          cachedCode = CharStreams.toString(getCodeReader());
+        try (Reader r = getCodeReader()) {
+          cachedCode = CharStreams.toString(r);
         } catch (java.nio.charset.MalformedInputException e) {
           throw new IOException("Failed to read: " + path + ", is this input UTF-8 encoded?", e);
         }
@@ -666,11 +671,12 @@ public class SourceFile implements StaticSourceFile, Serializable {
 
     @GwtIncompatible("ObjectOutputStream")
     private void writeObject(java.io.ObjectOutputStream out) throws Exception {
+      // Clear the cached source.
       out.defaultWriteObject();
       out.writeObject(inputCharset != null ? inputCharset.name() : null);
       out.writeObject(path != null ? path.toUri() : null);
     }
-
+    
     @GwtIncompatible("ObjectInputStream")
     private void readObject(java.io.ObjectInputStream in) throws Exception {
       in.defaultReadObject();
@@ -678,6 +684,9 @@ public class SourceFile implements StaticSourceFile, Serializable {
       inputCharset = inputCharsetName != null ? Charset.forName(inputCharsetName) : null;
       URI uri = (URI) in.readObject();
       path = uri != null ? Paths.get(uri) : null;
+
+      // Code will be reread or restored.
+      super.setCode(null);
     }
   }
 
@@ -767,12 +776,22 @@ public class SourceFile implements StaticSourceFile, Serializable {
     public Charset getCharset() {
       return Charset.forName(inputCharset);
     }
+
+    @GwtIncompatible("ObjectInputStream")
+    private void readObject(java.io.ObjectInputStream in) throws Exception {
+      in.defaultReadObject();
+      // Code will be reread or restored.
+      super.setCode(null);
+    }
   }
 
-  @GwtIncompatible("ObjectOutputStream")
-  private void writeObject(java.io.ObjectOutputStream out) throws Exception {
-    // Remove cached source before serializing.
-    clearCachedSource();
-    out.defaultWriteObject();
+  public void restoreFrom(SourceFile sourceFile) {
+    this.code = sourceFile.code;
+  }
+
+  @GwtIncompatible("ObjectInputStream")
+  private void readObject(java.io.ObjectInputStream in) throws Exception {
+    in.defaultReadObject();
+    code = "<UNAVAILABLE>";
   }
 }

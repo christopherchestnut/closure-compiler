@@ -37,14 +37,16 @@ public final class CrossModuleMethodMotionTest extends CompilerTestCase {
   @Override
   protected CompilerPass getProcessor(Compiler compiler) {
     return new CrossModuleMethodMotion(
-        compiler, new CrossModuleMethodMotion.IdGenerator(), canMoveExterns,
+        compiler, new IdGenerator(), canMoveExterns,
         noStubs);
   }
 
   @Override
-  public void setUp() {
+  protected void setUp() throws Exception {
+    super.setUp();
     canMoveExterns = false;
     noStubs = false;
+    enableNormalize();
   }
 
   public void testMovePrototypeMethod1() {

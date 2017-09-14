@@ -16,6 +16,8 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.base.Preconditions.checkNotNull;
+
 import com.google.common.base.Preconditions;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Multimap;
@@ -26,8 +28,11 @@ import com.google.javascript.jscomp.graph.GraphNode;
 import com.google.javascript.jscomp.graph.LatticeElement;
 import com.google.javascript.rhino.Node;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -43,18 +48,25 @@ class MaybeReachingVariableUse extends
     DataFlowAnalysis<Node, MaybeReachingVariableUse.ReachingUses> {
 
   // The scope of the function that we are analyzing.
-  private final Scope jsScope;
   private final Set<Var> escaped;
+  private final Map<String, Var> allVarsInFn;
+  private final List<Var> orderedVars;
 
   MaybeReachingVariableUse(
-      ControlFlowGraph<Node> cfg, Scope jsScope, AbstractCompiler compiler) {
+      ControlFlowGraph<Node> cfg,
+      Scope jsScope,
+      AbstractCompiler compiler,
+      Es6SyntacticScopeCreator scopeCreator) {
     super(cfg, new ReachingUsesJoinOp());
-    this.jsScope = jsScope;
     this.escaped = new HashSet<>();
+    this.allVarsInFn = new HashMap<>();
+    this.orderedVars = new LinkedList<>();
 
     // TODO(user): Maybe compute it somewhere else and re-use the escape
     // local set here.
-    computeEscaped(jsScope, escaped, compiler);
+    computeEscapedEs6(jsScope.getParent(), escaped, compiler, scopeCreator);
+    NodeUtil.getAllVarsDeclaredInFunction(
+        allVarsInFn, orderedVars, compiler, scopeCreator, jsScope.getParent());
   }
 
   /**
@@ -256,8 +268,8 @@ class MaybeReachingVariableUse extends
    * variable.
    */
   private void addToUseIfLocal(String name, Node node, ReachingUses use) {
-    Var var = jsScope.getVar(name);
-    if (var == null || var.scope != jsScope) {
+    Var var = allVarsInFn.get(name);
+    if (var == null) {
       return;
     }
     if (!escaped.contains(var)) {
@@ -271,8 +283,8 @@ class MaybeReachingVariableUse extends
    * variable.
    */
   private void removeFromUseIfLocal(String name, ReachingUses use) {
-    Var var = jsScope.getVar(name);
-    if (var == null || var.scope != jsScope) {
+    Var var = allVarsInFn.get(name);
+    if (var == null) {
       return;
     }
     if (!escaped.contains(var)) {
@@ -292,8 +304,8 @@ class MaybeReachingVariableUse extends
    */
   Collection<Node> getUses(String name, Node defNode) {
     GraphNode<Node, Branch> n = getCfg().getNode(defNode);
-    Preconditions.checkNotNull(n);
+    checkNotNull(n);
     FlowState<ReachingUses> state = n.getAnnotation();
-    return state.getOut().mayUseMap.get(jsScope.getVar(name));
+    return state.getOut().mayUseMap.get(allVarsInFn.get(name));
   }
 }

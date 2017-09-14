@@ -650,6 +650,24 @@ md.$mdThemingProvider.Theme.prototype.warnPalette =
  */
 md.$mdThemingProvider.Theme.prototype.dark = function(opt_isDark) {};
 
+/******************************************************************************
+ * $mdColors Service
+ *****************************************************************************/
+
+/** @interface */
+md.$mdColors = function() {};
+
+/**
+ * @param {!angular.JQLite} element
+ * @param {?Object} colorExpression
+ */
+md.$mdColors.prototype.applyThemeColors = function(element, colorExpression) {};
+
+/**
+ * @param {string} expression
+ * @return {string}
+ */
+md.$mdColors.prototype.getThemeColor = function(expression) {};
 
 /******************************************************************************
  * $mdIcon Service
@@ -723,6 +741,24 @@ md.$mdMenu = function() {};
  * @return {!angular.$q.Promise}
  */
 md.$mdMenu.prototype.hide = function(opt_reason, opt_options) {};
+
+/******************************************************************************
+ * $mdMenu that is provided to the scope of the trigger element so that the
+ * menu can be closed/opened from the template.
+ * https://material.angularjs.org/latest/api/directive/mdMenu
+ *****************************************************************************/
+
+/** @interface */
+md.menu = function() {};
+
+/** @param {!Event=} opt_event */
+md.menu.prototype.open = function(opt_event) {};
+
+/**
+ * @param {boolean=} opt_skipFocus
+ * @param {*=} opt_closeOptions
+ */
+md.menu.prototype.close = function(opt_skipFocus, opt_closeOptions) {};
 
 /******************************************************************************
  * $mdSelect Service

@@ -53,10 +53,10 @@ public final class AstValidatorTest extends CompilerTestCase {
 
   @Override
   protected void setUp() throws Exception {
-    super.enableAstValidation(false);
-    super.disableNormalize();
-    super.enableLineNumberCheck(false);
     super.setUp();
+    disableAstValidation();
+    disableNormalize();
+    disableLineNumberCheck();
   }
 
   public void testForIn() {
@@ -67,6 +67,7 @@ public final class AstValidatorTest extends CompilerTestCase {
   }
 
   public void testQuestionableForIn() {
+    setAcceptedLanguage(LanguageMode.ECMASCRIPT5);
     setExpectParseWarningsThisTest();
     valid("for(var a = 1 in b);");
   }
@@ -160,6 +161,32 @@ public final class AstValidatorTest extends CompilerTestCase {
     setLanguage(LanguageMode.ECMASCRIPT_NEXT, LanguageMode.ECMASCRIPT5);
     Node n = new Node(Token.AWAIT);
     n.addChildToBack(IR.number(1));
+    expectInvalid(n, Check.EXPRESSION);
+  }
+
+  public void testValidDestructuringAssignment() {
+    setAcceptedLanguage(LanguageMode.ECMASCRIPT_2015);
+    valid("var [x, ...y] = obj;");
+    valid("([...this.x] = obj);");
+    valid("var {a:b} = obj;");
+    valid("({a:this.b} = obj);");
+  }
+
+  public void testInvalidDestructuringAssignment() {
+    setAcceptedLanguage(LanguageMode.ECMASCRIPT_2015);
+
+    Node n = IR.assign(
+        new Node(Token.OBJECT_PATTERN, new Node(Token.ARRAY_PATTERN)), IR.objectlit());
+    expectInvalid(n, Check.EXPRESSION);
+
+    n = IR.assign(
+        new Node(Token.ARRAY_PATTERN, IR.computedProp(IR.string("x"), IR.number(1))),
+        IR.objectlit());
+    expectInvalid(n, Check.EXPRESSION);
+
+    Node stringkey = IR.stringKey("x");
+    stringkey.addChildToFront(IR.computedProp(IR.string("x"), IR.number(1)));
+    n = IR.assign(new Node(Token.OBJECT_PATTERN, stringkey), IR.objectlit());
     expectInvalid(n, Check.EXPRESSION);
   }
 

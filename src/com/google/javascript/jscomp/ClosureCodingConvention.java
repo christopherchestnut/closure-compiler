@@ -16,6 +16,8 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.base.Preconditions.checkArgument;
+
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
@@ -84,7 +86,7 @@ public final class ClosureCodingConvention extends CodingConventions.Proxy {
           // to be covariant on F.prototype.constructor.
           // To get around this, we just turn off type-checking on arguments
           // and return types of G.prototype.constructor.
-          childCtor.forgetParameterAndReturnTypes(),
+          (FunctionType) childCtor.toBuilder().withUnknownReturnType().withNoParameters().build(),
           childCtor.getSource());
     }
   }
@@ -353,7 +355,7 @@ public final class ClosureCodingConvention extends CodingConventions.Proxy {
 
   @Override
   public boolean isPropertyTestFunction(Node call) {
-    Preconditions.checkArgument(call.isCall());
+    checkArgument(call.isCall());
     return propertyTestFunctions.contains(
         call.getFirstChild().getQualifiedName()) ||
         super.isPropertyTestFunction(call);
@@ -379,8 +381,9 @@ public final class ClosureCodingConvention extends CodingConventions.Proxy {
     }
 
     Node callName = callNode.getFirstChild();
-    if (!callName.matchesQualifiedName("goog.reflect.object") ||
-        callNode.getChildCount() != 3) {
+    if (!(callName.matchesQualifiedName("goog.reflect.object")
+            || callName.matchesQualifiedName("$jscomp.reflectObject"))
+        || callNode.getChildCount() != 3) {
       return null;
     }
 

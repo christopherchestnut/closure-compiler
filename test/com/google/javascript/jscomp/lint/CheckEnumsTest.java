@@ -45,7 +45,8 @@ public final class CheckEnumsTest extends CompilerTestCase {
   }
 
   @Override
-  public void setUp() {
+  protected void setUp() throws Exception {
+    super.setUp();
     setAcceptedLanguage(LanguageMode.ECMASCRIPT_2017);
   }
 
@@ -75,5 +76,27 @@ public final class CheckEnumsTest extends CompilerTestCase {
     testWarning(
         "/** @enum {number} */ var E = { ABC: 1, abc: 2 };",
         ENUM_PROP_NOT_CONSTANT);
+  }
+
+  public void testCheckValidEnums_withES6Modules() throws Exception {
+    testSame("export /** @enum {number} */ var Enum = {A: 1, B: 2};");
+  }
+
+  public void testCheckInvalidEnums_withES6Modules01() throws Exception {
+    testWarning("export /** @enum {number} */ var Enum = {A: 1, B: 1};", DUPLICATE_ENUM_VALUE);
+  }
+
+  public void testCheckInvalidEnums_withES6Modules02() throws Exception {
+    testWarning("export /** @enum {number} */ var Enum = {A};", SHORTHAND_ASSIGNMENT_IN_ENUM);
+  }
+
+  public void testCheckInvalidEnums_withES6Modules03() throws Exception {
+    testWarning(
+        "export /** @enum {string} */ var Enum = {['prop' + f()]: 'foo'};",
+        COMPUTED_PROP_NAME_IN_ENUM);
+  }
+
+  public void testCheckInvalidEnums_withES6Modules04() throws Exception {
+    testWarning("export /** @enum {number} */ var E = { a: 1 };", ENUM_PROP_NOT_CONSTANT);
   }
 }

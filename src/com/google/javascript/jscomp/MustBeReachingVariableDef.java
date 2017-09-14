@@ -16,14 +16,19 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.common.base.Preconditions;
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.javascript.jscomp.ControlFlowGraph.AbstractCfgNodeTraversalCallback;
 import com.google.javascript.jscomp.ControlFlowGraph.Branch;
 import com.google.javascript.jscomp.graph.GraphNode;
 import com.google.javascript.jscomp.graph.LatticeElement;
 import com.google.javascript.rhino.Node;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
@@ -41,17 +46,24 @@ final class MustBeReachingVariableDef extends
     DataFlowAnalysis<Node, MustBeReachingVariableDef.MustDef> {
 
   // The scope of the function that we are analyzing.
-  private final Scope jsScope;
   private final AbstractCompiler compiler;
   private final Set<Var> escaped;
+  private final Map<String, Var> allVarsInFn;
+  private final List<Var> orderedVars;
 
   MustBeReachingVariableDef(
-      ControlFlowGraph<Node> cfg, Scope jsScope, AbstractCompiler compiler) {
+      ControlFlowGraph<Node> cfg,
+      Scope jsScope,
+      AbstractCompiler compiler,
+      Es6SyntacticScopeCreator scopeCreator) {
     super(cfg, new MustDefJoin());
-    this.jsScope = jsScope;
     this.compiler = compiler;
     this.escaped = new HashSet<>();
-    computeEscaped(jsScope, escaped, compiler);
+    this.allVarsInFn = new HashMap<>();
+    this.orderedVars = new LinkedList<>();
+    computeEscapedEs6(jsScope.getParent(), escaped, compiler, scopeCreator);
+    NodeUtil.getAllVarsDeclaredInFunction(
+        allVarsInFn, orderedVars, compiler, scopeCreator, jsScope.getParent());
   }
 
   /**
@@ -122,12 +134,9 @@ final class MustBeReachingVariableDef extends
       reachingDef = new HashMap<>();
     }
 
-    public MustDef(Iterable<? extends Var> vars) {
+    public MustDef(Collection<Var> vars) {
       this();
       for (Var var : vars) {
-        // Every variable in the scope is defined once in the beginning of the
-        // function: all the declared variables are undefined, all functions
-        // have been assigned and all arguments has its value from the caller.
         reachingDef.put(var, new Definition(var.scope.getRootNode()));
       }
     }
@@ -204,7 +213,7 @@ final class MustBeReachingVariableDef extends
 
   @Override
   MustDef createEntryLattice() {
-    return new MustDef(jsScope.getVarIterable());
+    return new MustDef(allVarsInFn.values());
   }
 
   @Override
@@ -273,12 +282,19 @@ final class MustBeReachingVariableDef extends
         computeMustDef(n.getLastChild(), cfgNode, output, true);
         return;
 
+      case LET:
+      case CONST:
       case VAR:
         for (Node c = n.getFirstChild(); c != null; c = c.getNext()) {
           if (c.hasChildren()) {
             computeMustDef(c.getFirstChild(), cfgNode, output, conditional);
-            addToDefIfLocal(c.getString(), conditional ? null : cfgNode,
-                c.getFirstChild(), output);
+            if (c.isName()) {
+              addToDefIfLocal(c.getString(), conditional ? null : cfgNode,
+                  c.getFirstChild(), output);
+            } else {
+              checkState(c.isDestructuringLhs(), c);
+              return;
+            }
           }
         }
         return;
@@ -288,8 +304,8 @@ final class MustBeReachingVariableDef extends
           if (n.getFirstChild().isName()) {
             Node name = n.getFirstChild();
             computeMustDef(name.getNext(), cfgNode, output, conditional);
-            addToDefIfLocal(name.getString(), conditional ? null : cfgNode,
-              n.getLastChild(), output);
+            addToDefIfLocal(
+                name.getString(), conditional ? null : cfgNode, n.getLastChild(), output);
             return;
           } else if (NodeUtil.isGet(n.getFirstChild())) {
             // Treat all assignments to arguments as redefining the
@@ -312,8 +328,7 @@ final class MustBeReachingVariableDef extends
         if (n.isDec() || n.isInc()) {
           Node target = n.getFirstChild();
           if (target.isName()) {
-            addToDefIfLocal(target.getString(),
-                conditional ? null : cfgNode, null, output);
+            addToDefIfLocal(target.getString(), conditional ? null : cfgNode, null, output);
             return;
           }
         }
@@ -333,11 +348,11 @@ final class MustBeReachingVariableDef extends
    */
   private void addToDefIfLocal(String name, @Nullable Node node,
       @Nullable Node rValue, MustDef def) {
-    Var var = jsScope.getVar(name);
+    Var var = allVarsInFn.get(name);
 
     // var might be null because the variable might be defined in the extern
     // that we might not traverse.
-    if (var == null || var.scope != jsScope) {
+    if (var == null) {
       return;
     }
 
@@ -365,7 +380,7 @@ final class MustBeReachingVariableDef extends
   }
 
   private void escapeParameters(MustDef output) {
-    for (Var v : jsScope.getVarIterable()) {
+    for (Var v : allVarsInFn.values()) {
       if (isParameter(v)) {
         // Assume we no longer know where the parameter comes from
         // anymore.
@@ -396,20 +411,22 @@ final class MustBeReachingVariableDef extends
    * in the def's depends set.
    */
   private void computeDependence(final Definition def, Node rValue) {
-    NodeTraversal.traverseEs6(compiler, rValue,
+    NodeTraversal.traverseEs6(
+        compiler,
+        rValue,
         new AbstractCfgNodeTraversalCallback() {
-      @Override
-      public void visit(NodeTraversal t, Node n, Node parent) {
-        if (n.isName()) {
-          Var dep = jsScope.getVar(n.getString());
-          if (dep == null) {
-            def.unknownDependencies = true;
-          } else {
-            def.depends.add(dep);
+          @Override
+          public void visit(NodeTraversal t, Node n, Node parent) {
+            if (n.isName()) {
+              Var dep = allVarsInFn.get(n.getString());
+              if (dep == null) {
+                def.unknownDependencies = true;
+              } else {
+                def.depends.add(dep);
+              }
+            }
           }
-        }
-      }
-    });
+        });
   }
 
   /**
@@ -421,10 +438,10 @@ final class MustBeReachingVariableDef extends
    * @param useNode the location of the use where the definition reaches.
    */
   Definition getDef(String name, Node useNode) {
-    Preconditions.checkArgument(getCfg().hasNode(useNode));
+    checkArgument(getCfg().hasNode(useNode));
     GraphNode<Node, Branch> n = getCfg().getNode(useNode);
     FlowState<MustDef> state = n.getAnnotation();
-    return state.getIn().reachingDef.get(jsScope.getVar(name));
+    return state.getIn().reachingDef.get(allVarsInFn.get(name));
   }
 
   Node getDefNode(String name, Node useNode) {
@@ -438,7 +455,8 @@ final class MustBeReachingVariableDef extends
     }
 
     for (Var s : def.depends) {
-      if (s.scope != jsScope) {
+      // Don't inline try catch
+      if (s.scope.isCatchScope()) {
         return true;
       }
     }

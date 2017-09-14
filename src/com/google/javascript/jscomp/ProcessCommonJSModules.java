@@ -15,7 +15,9 @@
  */
 package com.google.javascript.jscomp;
 
-import com.google.common.base.Preconditions;
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.common.collect.ImmutableCollection;
 import com.google.common.collect.ImmutableList;
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
@@ -90,7 +92,7 @@ public final class ProcessCommonJSModules implements CompilerPass {
    */
   @Override
   public void process(Node externs, Node root) {
-    Preconditions.checkState(root.isScript());
+    checkState(root.isScript());
     FindImportsAndExports finder = new FindImportsAndExports();
     NodeTraversal.traverseEs6(compiler, root, finder);
 
@@ -169,7 +171,7 @@ public final class ProcessCommonJSModules implements CompilerPass {
    * @return Whether an IIFE wrapper was found and removed.
    */
   private boolean removeIIFEWrapper(Node root) {
-    Preconditions.checkState(root.isScript());
+    checkState(root.isScript());
     Node n = root.getFirstChild();
 
     // Sometimes scripts start with a semicolon for easy concatenation.
@@ -258,7 +260,7 @@ public final class ProcessCommonJSModules implements CompilerPass {
     @Override
     public boolean shouldTraverse(NodeTraversal nodeTraversal, Node n, Node parent) {
       if (n.isScript()) {
-        Preconditions.checkState(this.script == null);
+        checkState(this.script == null);
         this.script = n;
       }
       return true;
@@ -657,7 +659,7 @@ public final class ProcessCommonJSModules implements CompilerPass {
           // order after hoisting.
           for (int i = functionsToHoist.size() - 1; i >= 0; i--) {
             Node functionExpr = functionsToHoist.get(i);
-            Node scopeRoot = t.getClosestHoistScope().getRootNode();
+            Node scopeRoot = t.getClosestHoistScopeRoot();
             Node insertionPoint = scopeRoot.getFirstChild();
             if (insertionPoint == null
                 || !(insertionPoint.isVar()
@@ -692,8 +694,28 @@ public final class ProcessCommonJSModules implements CompilerPass {
           }
           break;
 
+        case VAR:
+        case LET:
+        case CONST:
+          // Multiple declarations need split apart so that they can be refactored into
+          // property assignments or removed altogether.
+          if (n.hasMoreThanOneChild() && !NodeUtil.isAnyFor(parent)) {
+            List<Node> vars = splitMultipleDeclarations(n);
+            t.reportCodeChange();
+            for (Node var : vars) {
+              visit(t, var.getFirstChild(), var);
+            }
+          }
+          break;
+
         case NAME:
           {
+            // If this is a name declaration with multiple names, it will be split apart when
+            // the parent is visited and then revisit the children.
+            if (NodeUtil.isNameDeclaration(n.getParent()) && n.getParent().hasMoreThanOneChild()) {
+              break;
+            }
+
             String qName = n.getQualifiedName();
             if (qName == null) {
               break;
@@ -828,12 +850,21 @@ public final class ProcessCommonJSModules implements CompilerPass {
       if (root.matchesQualifiedName("module.exports")
           && rValue != null
           && t.getScope().getVar("module.exports") == null
-          && root.getParent().isAssign()
-          && root.getParent().getParent().isExprResult()) {
-        // Rewrite "module.exports = foo;" to "var moduleName = foo;"
-        Node parent = root.getParent();
-        Node var = IR.var(updatedExport, rValue.detach()).useSourceInfoFrom(root.getParent());
-        parent.getParent().replaceWith(var);
+          && root.getParent().isAssign()) {
+        if (root.getParent().getParent().isExprResult()) {
+          // Rewrite "module.exports = foo;" to "var moduleName = foo;"
+          Node parent = root.getParent();
+          Node var = IR.var(updatedExport, rValue.detach()).useSourceInfoFrom(root.getParent());
+          parent.getParent().replaceWith(var);
+        } else if (root.getNext() != null && root.getNext().isName() && rValueVar.isGlobal()) {
+          // This is a where a module export assignment is used in a complex expression.
+          // Before: `SOME_VALUE !== undefined && module.exports = SOME_VALUE`
+          // After: `SOME_VALUE !== undefined && module$name`
+          root.getParent().replaceWith(updatedExport);
+        } else {
+          // Other references to "module.exports" are just replaced with the module name.
+          export.replaceWith(updatedExport);
+        }
       } else {
         // Other references to "module.exports" are just replaced with the module name.
         export.replaceWith(updatedExport);
@@ -855,14 +886,15 @@ public final class ProcessCommonJSModules implements CompilerPass {
      * <p>module.exports.foo = bar; // removed later module.exports.baz = function() {};
      */
     private void expandObjectLitAssignment(NodeTraversal t, Node export) {
-      Preconditions.checkState(export.getParent().isAssign());
+      checkState(export.getParent().isAssign());
       Node insertionRef = export.getParent().getParent();
-      Preconditions.checkState(insertionRef.isExprResult());
+      checkState(insertionRef.isExprResult());
       Node insertionParent = insertionRef.getParent();
-      Preconditions.checkNotNull(insertionParent);
+      checkNotNull(insertionParent);
 
       Node rValue = NodeUtil.getRValueOfLValue(export);
       Node key = rValue.getFirstChild();
+
       while (key != null) {
         Node lhs;
         if (key.isQuotedString()) {
@@ -874,7 +906,7 @@ public final class ProcessCommonJSModules implements CompilerPass {
         Node value = null;
         if (key.isStringKey()) {
           if (key.hasChildren()) {
-            value = key.getFirstChild().detachFromParent();
+            value = key.removeFirstChild();
           } else {
             value = IR.name(key.getString());
           }
@@ -882,13 +914,20 @@ public final class ProcessCommonJSModules implements CompilerPass {
           value = key.getFirstChild().detach();
         }
 
-        Node expr = IR.exprResult(IR.assign(lhs, value)).useSourceInfoIfMissingFromForTree(key);
-
-        insertionParent.addChildAfter(expr, insertionRef);
-        visitExport(t, lhs.getFirstChild());
+        Node expr = null;
+        if (!key.isGetterDef()) {
+          expr = IR.exprResult(IR.assign(lhs, value)).useSourceInfoIfMissingFromForTree(key);
+          insertionParent.addChildAfter(expr, insertionRef);
+          visitExport(t, lhs.getFirstChild());
+        } else {
+          Node getter = key.detach();
+          String moduleName = t.getInput().getPath().toModuleName();
+          Node moduleObj = t.getScope().getVar(moduleName).getNode().getFirstChild();
+          moduleObj.addChildToBack(getter);
+        }
 
         // Export statements can be removed in visitExport
-        if (expr.getParent() != null) {
+        if (expr != null && expr.getParent() != null) {
           insertionRef = expr;
         }
 
@@ -910,9 +949,9 @@ public final class ProcessCommonJSModules implements CompilerPass {
      * file is a commonjs module.
      */
     private void maybeUpdateName(NodeTraversal t, Node n, Var var) {
-      Preconditions.checkNotNull(var);
-      Preconditions.checkState(n.isName() || n.isGetProp());
-      Preconditions.checkState(n.getParent() != null);
+      checkNotNull(var);
+      checkState(n.isName() || n.isGetProp());
+      checkState(n.getParent() != null);
       String importedModuleName = getModuleImportName(t, var.getNode());
       String originalName = n.getOriginalQualifiedName();
 
@@ -981,8 +1020,8 @@ public final class ProcessCommonJSModules implements CompilerPass {
         String newName,
         boolean requireFunctionExpressions) {
       Node parent = nameRef.getParent();
-      Preconditions.checkNotNull(parent);
-      Preconditions.checkNotNull(newName);
+      checkNotNull(parent);
+      checkNotNull(newName);
       boolean newNameIsQualified = newName.indexOf('.') >= 0;
 
       Var newNameDeclaration = t.getScope().getVar(newName);
@@ -1058,7 +1097,7 @@ public final class ProcessCommonJSModules implements CompilerPass {
             JSDocInfo info = parent.getJSDocInfo();
             parent.setJSDocInfo(null);
             if (nameRef.hasChildren()) {
-              Node assign = IR.assign(getProp, nameRef.getFirstChild().detachFromParent());
+              Node assign = IR.assign(getProp, nameRef.removeFirstChild());
               assign.setJSDocInfo(info);
               Node expr = IR.exprResult(assign).useSourceInfoIfMissingFromForTree(nameRef);
               parent.replaceWith(expr);
@@ -1068,8 +1107,16 @@ public final class ProcessCommonJSModules implements CompilerPass {
             }
           } else if (newNameDeclaration != null) {
             // Variable is already defined. Convert this to an assignment.
+            // If the variable declaration has no initialization, we simply
+            // remove the node. This can occur when the variable which is exported
+            // is declared in an outer scope but assigned in an inner one.
+            if (!nameRef.hasChildren()) {
+              parent.detachFromParent();
+              break;
+            }
+
             Node name = NodeUtil.newName(compiler, newName, nameRef, originalName);
-            Node assign = IR.assign(name, nameRef.getFirstChild().detachFromParent());
+            Node assign = IR.assign(name, nameRef.removeFirstChild());
             JSDocInfo info = parent.getJSDocInfo();
             if (info != null) {
               parent.setJSDocInfo(null);
@@ -1371,6 +1418,19 @@ public final class ProcessCommonJSModules implements CompilerPass {
            child = child.getNext()) {
         fixTypeNode(t, child);
       }
+    }
+
+    private List<Node> splitMultipleDeclarations(Node var) {
+      checkState(NodeUtil.isNameDeclaration(var));
+      List<Node> vars = new ArrayList<>();
+      while (var.getSecondChild() != null) {
+        Node newVar = new Node(var.getToken(), var.removeFirstChild());
+        newVar.useSourceInfoFrom(var);
+        var.getParent().addChildBefore(newVar, var);
+        vars.add(newVar);
+      }
+      vars.add(var);
+      return vars;
     }
   }
 }

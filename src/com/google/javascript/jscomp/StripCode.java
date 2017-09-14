@@ -169,7 +169,7 @@ class StripCode implements CompilerPass {
           Scope scope = t.getScope();
           varsToRemove.add(scope.getVar(name));
           n.removeChild(nameNode);
-          t.reportCodeChange();
+          NodeUtil.markFunctionsDeleted(nameNode, compiler);
         }
       }
       if (!n.hasChildren()) {
@@ -385,6 +385,7 @@ class StripCode implements CompilerPass {
         if (isStripName(key.getString())) {
           Node next = key.getNext();
           n.removeChild(key);
+          NodeUtil.markFunctionsDeleted(key, compiler);
           key = next;
           compiler.reportChangeToEnclosingScope(n);
         } else {
@@ -604,6 +605,7 @@ class StripCode implements CompilerPass {
      */
     void replaceWithNull(Node n, Node parent) {
       parent.replaceChild(n, IR.nullNode());
+      NodeUtil.markFunctionsDeleted(n, compiler);
     }
 
     /**
@@ -615,6 +617,7 @@ class StripCode implements CompilerPass {
      */
     void replaceWithEmpty(Node n, Node parent) {
       NodeUtil.removeChild(parent, n);
+      NodeUtil.markFunctionsDeleted(n, compiler);
     }
   }
 }

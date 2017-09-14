@@ -16,6 +16,9 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.common.base.Preconditions;
 import com.google.common.collect.HashMultiset;
 import com.google.common.collect.ImmutableSet;
@@ -186,8 +189,9 @@ class ScopedAliases implements HotSwapCompilerPass {
         Node scopeClosureBlock = scopeCall.getLastChild().getLastChild();
         scopeClosureBlock.detach();
         expressionWithScopeCall.replaceWith(scopeClosureBlock);
+        NodeUtil.markFunctionsDeleted(expressionWithScopeCall, compiler);
         compiler.reportChangeToEnclosingScope(scopeClosureBlock);
-        NodeUtil.tryMergeBlock(scopeClosureBlock);
+        NodeUtil.tryMergeBlock(scopeClosureBlock, false);
       }
     }
   }
@@ -223,7 +227,7 @@ class ScopedAliases implements HotSwapCompilerPass {
       Node replacement = aliasDefinition.cloneTree();
       replacement.useSourceInfoFromForTree(aliasReference);
       if (aliasReference.isStringKey()) {
-        Preconditions.checkState(!aliasReference.hasChildren());
+        checkState(!aliasReference.hasChildren());
         aliasReference.addChildToFront(replacement);
       } else {
         aliasReference.replaceWith(replacement);
@@ -246,8 +250,7 @@ class ScopedAliases implements HotSwapCompilerPass {
         // Already visited.
         return;
       }
-      String aliasExpanded =
-          Preconditions.checkNotNull(aliasDefinition.getQualifiedName());
+      String aliasExpanded = checkNotNull(aliasDefinition.getQualifiedName());
       Preconditions.checkState(typeName.startsWith(aliasName),
           "%s must start with %s", typeName, aliasName);
       String replacement =
@@ -596,7 +599,7 @@ class ScopedAliases implements HotSwapCompilerPass {
       renamer.addDeclaredName(fnName.getString(), false);
 
       MakeDeclaredNamesUnique uniquifier = new MakeDeclaredNamesUnique(renamer);
-      NodeTraversal.traverseEs6(compiler, fnName.getParent().getParent(), uniquifier);
+      NodeTraversal.traverseEs6(compiler, fnName.getGrandparent(), uniquifier);
     }
 
     private void validateScopeCall(NodeTraversal t, Node n, Node parent) {
@@ -609,7 +612,7 @@ class ScopedAliases implements HotSwapCompilerPass {
       if (t.getEnclosingFunction() != null) {
         report(t, n, GOOG_SCOPE_MUST_BE_IN_GLOBAL_SCOPE);
       }
-      if (n.getChildCount() != 2) {
+      if (!n.hasTwoChildren()) {
         // The goog.scope call should have exactly 1 parameter.  The first
         // child is the "goog.scope" and the second should be the parameter.
         report(t, n, GOOG_SCOPE_HAS_BAD_PARAMETERS);

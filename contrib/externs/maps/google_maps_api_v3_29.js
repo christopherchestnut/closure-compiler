@@ -2957,7 +2957,7 @@ google.maps.MVCObject.prototype.notify = function(key) {};
 
 /**
  * @param {string} key
- * @param {*} value
+ * @param {?} value
  * @return {undefined}
  */
 google.maps.MVCObject.prototype.set = function(key, value) {};
@@ -3522,7 +3522,7 @@ google.maps.MapsEventListener = function() {};
 google.maps.MapsEventListener.prototype.remove = function() {};
 
 /**
- * @param {(google.maps.MarkerOptions|Object.<string>)=} opt_opts
+ * @param {(google.maps.MarkerOptions|Object<string, ?>)=} opt_opts
  * @extends {google.maps.MVCObject}
  * @constructor
  */

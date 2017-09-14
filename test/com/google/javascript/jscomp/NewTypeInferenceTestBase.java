@@ -23,6 +23,7 @@ import static com.google.javascript.jscomp.testing.JSErrorSubject.assertError;
 import com.google.common.collect.ImmutableList;
 import com.google.javascript.jscomp.CompilerOptions.LanguageMode;
 import com.google.javascript.jscomp.parsing.parser.FeatureSet;
+import com.google.javascript.jscomp.parsing.parser.FeatureSet.Feature;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.InputId;
 import com.google.javascript.rhino.Node;
@@ -38,6 +39,22 @@ public abstract class NewTypeInferenceTestBase extends CompilerTypeTestCase {
 
   protected CompilerOptions compilerOptions;
 
+  protected static enum InputLanguageMode {
+    TRANSPILATION,
+    NO_TRANSPILATION,
+    BOTH;
+
+    boolean checkNative() {
+      return this == NO_TRANSPILATION || this == BOTH;
+    }
+
+    boolean checkTranspiled() {
+      return this == TRANSPILATION || this == BOTH;
+    }
+  }
+
+  protected InputLanguageMode mode = InputLanguageMode.NO_TRANSPILATION;
+
   protected static final String CLOSURE_BASE =
       LINE_JOINER.join(
           "/** @const */",
@@ -48,20 +65,20 @@ public abstract class NewTypeInferenceTestBase extends CompilerTypeTestCase {
           "goog.abstractMethod = function(){};",
           "goog.asserts;",
           "goog.asserts.assertInstanceOf;",
+          "/**",
+          " * @param {string} str",
+          " * @param {Object<string, string>=} opt_values",
+          " * @return {string}",
+          " */",
           "goog.getMsg;",
           "goog.addSingletonGetter;",
           "goog.reflect;",
           "goog.reflect.object;",
           "Object.prototype.superClass_;");
 
+  @SuppressWarnings("hiding")
   protected static final String DEFAULT_EXTERNS =
       CompilerTypeTestCase.DEFAULT_EXTERNS + LINE_JOINER.join(
-          "/**",
-          " * @param {Object} proto",
-          " * @param {Object=} opt_properties",
-          " * @return {!Object}",
-          " */",
-          "Object.create = function(proto, opt_properties) {};",
           "/** @const {undefined} */",
           "var undefined;",
           "/**",
@@ -159,7 +176,8 @@ public abstract class NewTypeInferenceTestBase extends CompilerTypeTestCase {
           " * @return {string}",
           " */",
           "String.raw = function(template, var_args) {};",
-          "");
+          "/** @return {?} */",
+          "function any() {}");
 
   @Override
   protected void setUp() throws Exception {
@@ -174,17 +192,22 @@ public abstract class NewTypeInferenceTestBase extends CompilerTypeTestCase {
     compilerOptions.setNewTypeInference(true);
     compilerOptions.setWarningLevel(
         DiagnosticGroups.NEW_CHECK_TYPES_ALL_CHECKS, CheckLevel.WARNING);
+    compilerOptions.setLanguageIn(LanguageMode.ECMASCRIPT_2017);
     // ES5 is the highest language level that type inference understands.
-    compilerOptions.setLanguage(LanguageMode.ECMASCRIPT5);
+    compilerOptions.setLanguageOut(LanguageMode.ECMASCRIPT5);
     return compilerOptions;
   }
 
-  protected final PassFactory makePassFactory(
-      String name, final CompilerPass pass) {
+  protected PassFactory makePassFactory(String name, final CompilerPass pass) {
     return new PassFactory(name, true/* one-time pass */) {
       @Override
       protected CompilerPass create(AbstractCompiler compiler) {
         return pass;
+      }
+
+      @Override
+      protected FeatureSet featureSet() {
+        return FeatureSet.latest().withoutTypes();
       }
     };
   }
@@ -195,6 +218,7 @@ public abstract class NewTypeInferenceTestBase extends CompilerTypeTestCase {
         ImmutableList.of(SourceFile.fromCode("[externs]", externs)),
         ImmutableList.of(SourceFile.fromCode("[testcode]", js)),
         compilerOptions);
+    compiler.setFeatureSet(compiler.getFeatureSet().without(Feature.MODULES));
 
     Node externsRoot = IR.root();
     externsRoot.addChildToFront(
@@ -209,6 +233,11 @@ public abstract class NewTypeInferenceTestBase extends CompilerTypeTestCase {
     // Create common parent of externs and ast; needed by Es6RewriteBlockScopedDeclaration.
     Node block = IR.root(externsRoot, astRoot);
 
+    // TODO(dimvar): clean this up and use parseInputs instead of setting the jsRoot directly.
+    compiler.jsRoot = astRoot;
+    compiler.externsRoot = externsRoot;
+    compiler.externAndJsRoot = block;
+
     // Run ASTValidator
     (new AstValidator(compiler)).validateRoot(block);
 
@@ -219,17 +248,18 @@ public abstract class NewTypeInferenceTestBase extends CompilerTypeTestCase {
     ProcessClosurePrimitives closurePass =
         new ProcessClosurePrimitives(compiler, null, CheckLevel.ERROR, false);
     passes.add(makePassFactory("ProcessClosurePrimitives", closurePass));
-    if (compilerOptions.getLanguageIn() == LanguageMode.ECMASCRIPT6_TYPED) {
+    if (compilerOptions.needsTranspilationFrom(FeatureSet.TYPESCRIPT)) {
       passes.add(makePassFactory("convertEs6TypedToEs6",
               new Es6TypedToEs6Converter(compiler)));
     }
     if (compilerOptions.needsTranspilationFrom(FeatureSet.ES6)) {
       TranspilationPasses.addEs2017Passes(passes);
+      TranspilationPasses.addEs2016Passes(passes);
       TranspilationPasses.addEs6EarlyPasses(passes);
       TranspilationPasses.addEs6LatePasses(passes);
       TranspilationPasses.addRewritePolyfillPass(passes);
     }
-    passes.add(makePassFactory("GlobalTypeInfo", compiler.getSymbolTable()));
+    passes.add(makePassFactory("GlobalTypeInfo", new GlobalTypeInfoCollector(compiler)));
     passes.add(makePassFactory("NewTypeInference", new NewTypeInference(compiler)));
 
     PhaseOptimizer phaseopt = new PhaseOptimizer(compiler, null);
@@ -238,12 +268,26 @@ public abstract class NewTypeInferenceTestBase extends CompilerTypeTestCase {
   }
 
   protected final void typeCheck(String js, DiagnosticType... warningKinds) {
-    typeCheck(DEFAULT_EXTERNS, js, warningKinds);
+    if (this.mode.checkNative()) {
+      compilerOptions.setLanguageOut(LanguageMode.ECMASCRIPT_2015);
+      typeCheck(DEFAULT_EXTERNS, js, warningKinds);
+    }
+    if (this.mode.checkTranspiled()) {
+      compilerOptions.setLanguageOut(LanguageMode.ECMASCRIPT5);
+      typeCheck(DEFAULT_EXTERNS, js, warningKinds);
+    }
   }
 
   protected final void typeCheckCustomExterns(
       String externs, String js, DiagnosticType... warningKinds) {
-    typeCheck(externs, js, warningKinds);
+    if (this.mode.checkNative()) {
+      compilerOptions.setLanguageOut(LanguageMode.ECMASCRIPT_2015);
+      typeCheck(externs, js, warningKinds);
+    }
+    if (this.mode.checkTranspiled()) {
+      compilerOptions.setLanguageOut(LanguageMode.ECMASCRIPT5);
+      typeCheck(externs, js, warningKinds);
+    }
   }
 
   private final void typeCheck(
@@ -279,6 +323,18 @@ public abstract class NewTypeInferenceTestBase extends CompilerTypeTestCase {
   // It is deliberately less general; no custom externs and only a single
   // warning per test.
   protected final void typeCheckMessageContents(
+      String js, DiagnosticType warningKind, String warningMsg) {
+    if (this.mode.checkNative()) {
+      compilerOptions.setLanguageOut(LanguageMode.ECMASCRIPT_2015);
+      typeCheckMessageContentsHelper(js, warningKind, warningMsg);
+    }
+    if (this.mode.checkTranspiled()) {
+      compilerOptions.setLanguageOut(LanguageMode.ECMASCRIPT5);
+      typeCheckMessageContentsHelper(js, warningKind, warningMsg);
+    }
+  }
+
+  private final void typeCheckMessageContentsHelper(
       String js, DiagnosticType warningKind, String warningMsg) {
     parseAndTypeCheck(DEFAULT_EXTERNS, js);
     JSError[] warnings = compiler.getWarnings();

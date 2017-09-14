@@ -16,6 +16,8 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.truth.Truth.assertThat;
+
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 import com.google.javascript.jscomp.CompilerOptions.LanguageMode;
@@ -1301,7 +1303,7 @@ public final class CodePrinterTest extends CodePrinterTestBase {
   }
 
   public void testEmitUnknownParamTypesAsAllType() {
-    // TODO(sdh): Why does NTI infer `x` to be optional?
+    // x is unused, so NTI infers that x can be omitted.
     assertTypeAnnotations(
         "var a = function(x) {}",
         LINE_JOINER.join(
@@ -1324,6 +1326,17 @@ public final class CodePrinterTest extends CodePrinterTestBase {
         LINE_JOINER.join(
             "/**",
             " * @param {string=} x",
+            " * @return {undefined}",
+            " */",
+            "var a = function(x) {\n};\n"));
+  }
+
+  public void testOptionalTypesAnnotation2() {
+    assertTypeAnnotations(
+        "/** @param {undefined=} x */ var a = function(x) {}",
+        LINE_JOINER.join(
+            "/**",
+            " * @param {undefined=} x",
             " * @return {undefined}",
             " */",
             "var a = function(x) {\n};\n"));
@@ -1378,7 +1391,8 @@ public final class CodePrinterTest extends CodePrinterTestBase {
         LINE_JOINER.join(
             "/** @const */ var goog = goog || {};",
             "/** @enum {string} */\ngoog.Enum = {FOO:\"x\", BAR:\"y\"};",
-            "/** @type {{BAR: string=, FOO: string=}} */\ngoog.Enum2 = goog.x ? {} : goog.Enum;",
+            "/** @type {{BAR: goog.Enum=, FOO: goog.Enum=}} */",
+            "goog.Enum2 = goog.x ? {} : goog.Enum;",
             ""));
   }
 
@@ -1386,6 +1400,35 @@ public final class CodePrinterTest extends CodePrinterTestBase {
     assertTypeAnnotations(
         "/** @enum {!Object} */ var Enum = {FOO: {}};",
         "/** @enum {!Object} */\nvar Enum = {FOO:{}};\n");
+  }
+
+  public void testEnumAnnotation4() {
+    assertTypeAnnotations(
+        LINE_JOINER.join(
+            "/** @enum {number} */ var E = {A:1, B:2};",
+            "function f(/** !E */ x) { return x; }"),
+        LINE_JOINER.join(
+            "/** @enum {number} */",
+            "var E = {A:1, B:2};",
+            "/**",
+            " * @param {number} x",
+            " * @return {?}",
+            " */",
+            "function f(x) {",
+            "  return x;",
+            "}",
+            ""),
+        LINE_JOINER.join(
+            "/** @enum {number} */",
+            "var E = {A:1, B:2};",
+            "/**",
+            " * @param {E} x",
+            " * @return {E}",
+            " */",
+            "function f(x) {",
+            "  return x;",
+            "}",
+            ""));
   }
 
   public void testClosureLibraryTypeAnnotationExamples() {
@@ -1405,19 +1448,6 @@ public final class CodePrinterTest extends CodePrinterTestBase {
             "};",
             "/**",
             " * @param {(Object|null)} p0",
-            " * @return {undefined}",
-            " */",
-            "goog.removeHashCode = goog.removeUid;\n"),
-        LINE_JOINER.join(
-            "/** @const */ var goog = goog || {};",
-            "/**",
-            " * @param {!Object|null} obj",
-            " * @return {undefined}",
-            " */",
-            "goog.removeUid = function(obj) {",
-            "};",
-            "/**",
-            " * @param {!Object|null} p0",
             " * @return {undefined}",
             " */",
             "goog.removeHashCode = goog.removeUid;\n"));
@@ -1899,7 +1929,7 @@ public final class CodePrinterTest extends CodePrinterTestBase {
     languageMode = LanguageMode.ECMASCRIPT3;
 
     Node getter = Node.newString(Token.GETTER_DEF, "f");
-    getter.addChildToBack(IR.function(IR.name(""), IR.paramList(), IR.block()));
+    getter.addChildToBack(NodeUtil.emptyFunction());
     assertPrintNode("({get f(){}})",
         IR.exprResult(IR.objectlit(getter)));
   }
@@ -1932,8 +1962,7 @@ public final class CodePrinterTest extends CodePrinterTestBase {
     languageMode = LanguageMode.ECMASCRIPT3;
 
     Node getter = Node.newString(Token.SETTER_DEF, "f");
-    getter.addChildToBack(IR.function(
-        IR.name(""), IR.paramList(IR.name("a")), IR.block()));
+    getter.addChildToBack(IR.function(IR.name(""), IR.paramList(IR.name("a")), IR.block()));
     assertPrintNode("({set f(a){}})",
         IR.exprResult(IR.objectlit(getter)));
   }
@@ -1969,6 +1998,22 @@ public final class CodePrinterTest extends CodePrinterTestBase {
     assertEquals("'use strict';var x", result);
   }
 
+  public void testStrictPretty() {
+    String result =
+        defaultBuilder(parse("var x", TypeInferenceMode.OTI_ONLY))
+            .setTagAsStrict(true)
+            .setPrettyPrint(true)
+            .build();
+    assertThat(result).isEqualTo("'use strict';\nvar x;\n");
+
+    result =
+        defaultBuilder(parse("var x", TypeInferenceMode.NTI_ONLY))
+            .setTagAsStrict(true)
+            .setPrettyPrint(true)
+            .build();
+    assertThat(result).isEqualTo("'use strict';\nvar x;\n");
+  }
+
   public void testExterns() {
     String result =
         defaultBuilder(parse("var x", TypeInferenceMode.OTI_ONLY)).setTagAsExterns(true).build();
@@ -1977,6 +2022,20 @@ public final class CodePrinterTest extends CodePrinterTestBase {
     result =
         defaultBuilder(parse("var x", TypeInferenceMode.NTI_ONLY)).setTagAsExterns(true).build();
     assertEquals("/** @externs */\nvar x", result);
+  }
+
+  public void testIjs() {
+    String result =
+        defaultBuilder(parse("var x", TypeInferenceMode.OTI_ONLY))
+            .setTagAsTypeSummary(true)
+            .build();
+    assertEquals("/** @fileoverview @typeSummary */\nvar x", result);
+
+    result =
+        defaultBuilder(parse("var x", TypeInferenceMode.NTI_ONLY))
+            .setTagAsTypeSummary(true)
+            .build();
+    assertEquals("/** @fileoverview @typeSummary */\nvar x", result);
   }
 
   public void testArrayLiteral() {
@@ -2441,6 +2500,24 @@ public final class CodePrinterTest extends CodePrinterTestBase {
     assertPrint("x?((x)=>0):((x)=>1)", "x?(x)=>0:(x)=>1");
   }
 
+  public void testParensAroundArrowReturnValue() {
+    languageMode = LanguageMode.ECMASCRIPT_2015;
+    assertPrintSame("()=>({})");
+    assertPrintSame("()=>({a:1})");
+    assertPrintSame("()=>({a:1,b:2})");
+    assertPrint("()=>/** @type {Object} */({})", "()=>({})");
+    assertPrint("()=>/** @type {Object} */({a:1})", "()=>({a:1})");
+    assertPrint("()=>/** @type {Object} */({a:1,b:2})", "()=>({a:1,b:2})");
+    assertPrint("()=>/** @type {number} */(3)", "()=>3");
+
+    assertPrintSame("()=>(1,2)");
+    assertPrintSame("()=>({},2)");
+    assertPrintSame("()=>(1,{})");
+    assertPrint("()=>/** @type {?} */(1,2)", "()=>(1,2)");
+    assertPrint("()=>/** @type {?} */({},2)", "()=>({},2)");
+    assertPrint("()=>/** @type {?} */(1,{})", "()=>(1,{})");
+  }
+
   public void testPrettyArrowFunction() {
     languageMode = LanguageMode.ECMASCRIPT_2015;
     assertPrettyPrint("if (x) {var f = ()=>{alert(1); alert(2)}}",
@@ -2611,6 +2688,7 @@ public final class CodePrinterTest extends CodePrinterTestBase {
         + "}\n"
         + "exports.fn = fn;\n";
     String expectedCode = ""
+        + "goog.module('foo.bar');\n"
         + "void 0;\n"
         + "var module$exports$foo$bar = {};\n"
         + "const STR = '3';\n"

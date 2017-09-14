@@ -124,7 +124,7 @@ public enum Token {
     DEFAULT_CASE, // default keyword
     WHILE, // while keyword
     DO, // do keyword
-    FOR, // for(;;) statemet
+    FOR, // for(;;) statement
     FOR_IN, // for-in
     BREAK, // break keyword
     CONTINUE, // continue keyword
@@ -215,7 +215,7 @@ public enum Token {
     PIPE,
     STAR,
     EOC,
-    QMARK,
+    QMARK, // type is nullable or unknown
     ELLIPSIS,
     BANG,
     EQUALS,
@@ -241,7 +241,8 @@ public enum Token {
     // Tokens to use for internal bookkeeping,
     // an AST is invalid while these are present.
     PLACEHOLDER1,
-    PLACEHOLDER2;
+  PLACEHOLDER2,
+  PLACEHOLDER3;
 
   /** If the arity isn't always the same, this function returns -1 */
   public static int arity(Token token) {
@@ -369,6 +370,7 @@ public enum Token {
       case WITH:
         return 2;
       case CLASS:
+      case FOR_IN:
       case FOR_OF:
       case FUNCTION:
       case HOOK:

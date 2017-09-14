@@ -16,10 +16,12 @@
 
 package com.google.javascript.jscomp.parsing;
 
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Ascii;
 import com.google.common.base.CharMatcher;
-import com.google.common.base.Preconditions;
 import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableSet;
 import com.google.javascript.jscomp.parsing.Config.LanguageMode;
@@ -56,7 +58,6 @@ public final class JsDocInfoParser {
 
   private final JsDocTokenStream stream;
   private final JSDocInfoBuilder jsdocBuilder;
-  private final StaticSourceFile sourceFile;
   private final ErrorReporter errorReporter;
 
   // Use a template node for properties set on all nodes to minimize the
@@ -146,6 +147,10 @@ public final class JsDocInfoParser {
     this.fileOverviewJSDocInfo = fileOverviewJSDocInfo;
   }
 
+  public StaticSourceFile getSourceFile() {
+    return templateNode.getStaticSourceFile();
+  }
+
   private enum State {
     SEARCHING_ANNOTATION,
     SEARCHING_NEWLINE,
@@ -156,12 +161,10 @@ public final class JsDocInfoParser {
   JsDocInfoParser(JsDocTokenStream stream,
                   String comment,
                   int commentPosition,
-                  StaticSourceFile sourceFile,
+                  Node templateNode,
                   Config config,
                   ErrorReporter errorReporter) {
     this.stream = stream;
-
-    this.sourceFile = sourceFile;
 
     boolean parseDocumentation = config.parseJsDocDocumentation.shouldParseDescriptions();
     this.jsdocBuilder = new JSDocInfoBuilder(parseDocumentation);
@@ -175,10 +178,11 @@ public final class JsDocInfoParser {
         config.parseJsDocDocumentation == Config.JsDocParsing.INCLUDE_DESCRIPTIONS_WITH_WHITESPACE;
 
     this.errorReporter = errorReporter;
-    this.templateNode = this.createTemplateNode();
+    this.templateNode = templateNode == null ? IR.script() : templateNode;
   }
 
   private String getSourceName() {
+    StaticSourceFile sourceFile = getSourceFile();
     return sourceFile == null ? null : sourceFile.getName();
   }
 
@@ -607,6 +611,12 @@ public final class JsDocInfoParser {
           }
           return eatUntilEOLIfNotAnnotation();
 
+        case TYPE_SUMMARY:
+          if (!jsdocBuilder.recordTypeSummary()) {
+            addParserWarning("msg.jsdoc.typesummary");
+          }
+          return eatUntilEOLIfNotAnnotation();
+
         case EXTENDS:
         case IMPLEMENTS:
           skipEOLs();
@@ -621,8 +631,7 @@ public final class JsDocInfoParser {
           }
 
           if (token == JsDocToken.STRING) {
-            Node typeNode = parseAndRecordTypeNameNode(
-                token, lineno, charno, matchingRc);
+            Node typeNode = parseAndRecordTypeNameNode(token, lineno, charno, matchingRc);
 
             lineno = stream.getLineno();
             charno = stream.getCharno();
@@ -632,11 +641,9 @@ public final class JsDocInfoParser {
 
             if (annotation == Annotation.EXTENDS) {
               // record the extended type, check later
-              extendedTypes.add(new ExtendedTypeInfo(
-                  type, stream.getLineno(), stream.getCharno()));
+              extendedTypes.add(new ExtendedTypeInfo(type, stream.getLineno(), stream.getCharno()));
             } else {
-              Preconditions.checkState(
-                  annotation == Annotation.IMPLEMENTS);
+              checkState(annotation == Annotation.IMPLEMENTS);
               if (!jsdocBuilder.recordImplementedInterface(type)) {
                 addTypeWarning("msg.jsdoc.implements.duplicate", lineno, charno);
               }
@@ -648,8 +655,9 @@ public final class JsDocInfoParser {
               } else {
                 token = next();
               }
-            } else if (token != JsDocToken.EOL &&
-                token != JsDocToken.EOF && token != JsDocToken.EOC) {
+            } else if (token != JsDocToken.EOL
+                && token != JsDocToken.EOF
+                && token != JsDocToken.EOC) {
               addTypeWarning("msg.end.annotation.expected");
             }
           } else {
@@ -724,11 +732,43 @@ public final class JsDocInfoParser {
           }
           return eatUntilEOLIfNotAnnotation();
 
+        case POLYMER:
+          if (jsdocBuilder.isPolymerRecorded()) {
+            addParserWarning("msg.jsdoc.polymer.extra");
+          } else {
+            jsdocBuilder.recordPolymer();
+          }
+          return eatUntilEOLIfNotAnnotation();
+
         case POLYMER_BEHAVIOR:
           if (jsdocBuilder.isPolymerBehaviorRecorded()) {
             addParserWarning("msg.jsdoc.polymerBehavior.extra");
           } else {
             jsdocBuilder.recordPolymerBehavior();
+          }
+          return eatUntilEOLIfNotAnnotation();
+
+        case CUSTOM_ELEMENT:
+          if (jsdocBuilder.isCustomElementRecorded()) {
+            addParserWarning("msg.jsdoc.customElement.extra");
+          } else {
+            jsdocBuilder.recordCustomElement();
+          }
+          return eatUntilEOLIfNotAnnotation();
+
+        case MIXIN_CLASS:
+          if (jsdocBuilder.isMixinClassRecorded()) {
+            addParserWarning("msg.jsdoc.mixinClass.extra");
+          } else {
+            jsdocBuilder.recordMixinClass();
+          }
+          return eatUntilEOLIfNotAnnotation();
+
+        case MIXIN_FUNCTION:
+          if (jsdocBuilder.isMixinFunctionRecorded()) {
+            addParserWarning("msg.jsdoc.mixinFunction.extra");
+          } else {
+            jsdocBuilder.recordMixinFunction();
           }
           return eatUntilEOLIfNotAnnotation();
 
@@ -860,7 +900,7 @@ public final class JsDocInfoParser {
             return token;
           }
 
-          jsdocBuilder.markName(name, sourceFile, lineno, charno);
+          jsdocBuilder.markName(name, templateNode, lineno, charno);
 
           // Find the parameter's description (if applicable).
           if (jsdocBuilder.shouldParseDocumentation()
@@ -1008,7 +1048,7 @@ public final class JsDocInfoParser {
             if (validTypeTransformation) {
               TypeTransformationParser ttlParser =
                   new TypeTransformationParser(typeTransformationExpr,
-                      sourceFile, errorReporter, templateLineno, templateCharno);
+                      getSourceFile(), errorReporter, templateLineno, templateCharno);
               // If the parsing was successful store the type transformation
               if (ttlParser.parseTypeTransformation()
                   && !jsdocBuilder.recordTypeTransformation(
@@ -1483,7 +1523,7 @@ public final class JsDocInfoParser {
    * @return The type expression found or null if none.
    */
   private Node parseAndRecordParamTypeNode(JsDocToken token) {
-    Preconditions.checkArgument(token == JsDocToken.LEFT_CURLY);
+    checkArgument(token == JsDocToken.LEFT_CURLY);
     int lineno = stream.getLineno();
     int startCharno = stream.getCharno();
 
@@ -1955,7 +1995,7 @@ public final class JsDocInfoParser {
    * ParamTypeExpressionAnnotation := '{' ParamTypeExpression '}'
    */
   private Node parseParamTypeExpressionAnnotation(JsDocToken token) {
-    Preconditions.checkArgument(token == JsDocToken.LEFT_CURLY);
+    checkArgument(token == JsDocToken.LEFT_CURLY);
 
     skipEOLs();
 
@@ -2074,6 +2114,7 @@ public final class JsDocInfoParser {
           || token == JsDocToken.PIPE
           || token == JsDocToken.RIGHT_ANGLE
           || token == JsDocToken.EOC
+          || token == JsDocToken.EOL
           || token == JsDocToken.EOF) {
         restoreLookAhead(token);
         return newNode(Token.QMARK);
@@ -2388,7 +2429,7 @@ public final class JsDocInfoParser {
       if (expr != null) {
         skipEOLs();
         token = next();
-        Preconditions.checkState(token == JsDocToken.PIPE);
+        checkState(token == JsDocToken.PIPE);
 
         skipEOLs();
         token = next();
@@ -2554,16 +2595,6 @@ public final class JsDocInfoParser {
     Node n = Node.newString(s, lineno, charno).clonePropsFrom(templateNode);
     n.setLength(s.length());
     return n;
-  }
-
-  // This is similar to IRFactory.createTemplateNode to share common props
-  // e.g., source-name, between all nodes.
-  private Node createTemplateNode() {
-    // The Node type choice is arbitrary.
-    Node templateNode = IR.script();
-    templateNode.setStaticSourceFile(
-      this.sourceFile);
-    return templateNode;
   }
 
   private Node reportTypeSyntaxWarning(String warning) {

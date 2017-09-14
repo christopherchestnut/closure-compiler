@@ -16,11 +16,11 @@
 
 package com.google.javascript.jscomp.parsing;
 
+import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.truth.Truth.assertThat;
 import static com.google.javascript.jscomp.parsing.JsDocInfoParser.BAD_TYPE_WIKI_LINK;
 import static com.google.javascript.jscomp.testing.NodeSubject.assertNode;
 
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.javascript.jscomp.SourceFile;
@@ -29,6 +29,7 @@ import com.google.javascript.jscomp.parsing.Config.LanguageMode;
 import com.google.javascript.jscomp.parsing.Config.RunMode;
 import com.google.javascript.jscomp.parsing.Config.StrictMode;
 import com.google.javascript.jscomp.parsing.ParserRunner.ParseResult;
+import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.JSDocInfo;
 import com.google.javascript.rhino.JSDocInfo.Marker;
 import com.google.javascript.rhino.JSDocInfo.Visibility;
@@ -181,6 +182,24 @@ public final class JsDocInfoParserTest extends BaseJSTypeTestCase {
     JSDocInfo info = parse("@typedef \n {(string|number)}*/");
     assertThat(info.hasTypedefType()).isTrue();
     assertTypeEquals(createUnionType(NUMBER_TYPE, STRING_TYPE), info.getTypedefType());
+  }
+
+  // https://github.com/google/closure-compiler/issues/2543
+  public void testTypedefType4() {
+    JSDocInfo info = parse(LINE_JOINER.join(
+        "@typedef {{",
+        " *  boo: ?,",
+        " *  goo: ?",
+        " * }}",
+        " */"));
+    assertThat(info.hasTypedefType()).isTrue();
+
+    JSType recordType =
+        createRecordTypeBuilder()
+            .addProperty("boo", UNKNOWN_TYPE, null)
+            .addProperty("goo", UNKNOWN_TYPE, null)
+            .build();
+    assertTypeEquals(recordType, info.getTypedefType());
   }
 
   public void testParseStringType1() {
@@ -458,88 +477,88 @@ public final class JsDocInfoParserTest extends BaseJSTypeTestCase {
   }
 
   public void testParseFunctionalType1() {
-    testParseType("function (): number");
+    testParseType("function(): number");
   }
 
   public void testParseFunctionalType2() {
-    testParseType("function (number, string): boolean");
+    testParseType("function(number, string): boolean");
   }
 
   public void testParseFunctionalType3() {
     testParseType(
-        "function(this:Array)", "function (this:Array): ?");
+        "function(this:Array)", "function(this:Array): ?");
   }
 
   public void testParseFunctionalType4() {
-    testParseType("function (...number): boolean");
+    testParseType("function(...number): boolean");
   }
 
   public void testParseFunctionalType5() {
-    testParseType("function (number, ...string): boolean");
+    testParseType("function(number, ...string): boolean");
   }
 
   public void testParseFunctionalType6() {
     testParseType(
-        "function (this:Date, number): (boolean|number|string)");
+        "function(this:Date, number): (boolean|number|string)");
   }
 
   public void testParseFunctionalType7() {
-    testParseType("function()", "function (): ?");
+    testParseType("function()", "function(): ?");
   }
 
   public void testParseFunctionalType9() {
     testParseType(
         "function(this:Array,!Date,...(boolean?))",
-        "function (this:Array, Date, ...(boolean|null)): ?");
+        "function(this:Array, Date, ...(boolean|null)): ?");
   }
 
   public void testParseFunctionalType10() {
     testParseType(
         "function(...(Object?)):boolean?",
-        "function (...(Object|null)): (boolean|null)");
+        "function(...(Object|null)): (boolean|null)");
   }
 
   public void testParseFunctionalType12() {
     testParseType(
         "function(...)",
-        "function (...?): ?");
+        "function(...?): ?");
   }
 
   public void testParseFunctionalType13() {
     testParseType(
         "function(...): void",
-        "function (...?): undefined");
+        "function(...?): undefined");
   }
 
   public void testParseFunctionalType14() {
-    testParseType("function (*, string, number): boolean");
+    testParseType("function(*, string, number): boolean");
   }
 
   public void testParseFunctionalType15() {
-    testParseType("function (?, string): boolean");
+    testParseType("function(?, string): boolean");
   }
 
   public void testParseFunctionalType16() {
-    testParseType("function (string, ?): ?");
+    testParseType("function(string, ?): ?");
   }
 
   public void testParseFunctionalType17() {
-    testParseType("(function (?): ?|number)");
+    testParseType("(function(?): ?|number)");
   }
 
   public void testParseFunctionalType18() {
-    testParseType("function (?): (?|number)", "function (?): ?");
+    testParseType("function (?): (?|number)", "function(?): ?");
   }
 
   public void testParseFunctionalType19() {
     testParseType(
         "function(...?): void",
-        "function (...?): undefined");
+        "function(...?): undefined");
   }
 
   public void testStructuralConstructor() {
     JSType type = testParseType(
-        "function (new:Object)", "function (new:Object): ?");
+        "function (new:Object)", "function(new:Object): ?");
     assertThat(type.isConstructor()).isTrue();
     assertThat(type.isNominalConstructor()).isFalse();
   }
@@ -548,7 +567,7 @@ public final class JsDocInfoParserTest extends BaseJSTypeTestCase {
     JSType type = testParseType(
         "function (new:?)",
         // toString skips unknowns, but isConstructor reveals the truth.
-        "function (): ?");
+        "function(): ?");
     assertThat(type.isConstructor()).isTrue();
     assertThat(type.isNominalConstructor()).isFalse();
   }
@@ -1786,6 +1805,18 @@ public final class JsDocInfoParserTest extends BaseJSTypeTestCase {
 
   public void testParseExterns3() {
     assertThat(parse("@externs*/")).isNull();
+  }
+
+  public void testParseTypeSummary1() {
+    assertThat(parseFileOverview("@typeSummary*/").isTypeSummary()).isTrue();
+  }
+
+  public void testParseTypeSummary2() {
+    parseFileOverview("@typeSummary\n@typeSummary*/", "extra @typeSummary tag");
+  }
+
+  public void testParseTypeSummary3() {
+    assertThat(parse("@typeSummary*/")).isNull();
   }
 
   public void testParseNoCompile1() {
@@ -4238,9 +4269,9 @@ public final class JsDocInfoParserTest extends BaseJSTypeTestCase {
         "   */\n" +
         "  function f(x) {}");
     Node script = parseFull(sourceFile.getCode());
-    Preconditions.checkState(script.isScript());
+    checkState(script.isScript());
     Node fn = script.getFirstChild();
-    Preconditions.checkState(fn.isFunction());
+    checkState(fn.isFunction());
     JSDocInfo jsdoc = fn.getJSDocInfo();
 
     assertThat(jsdoc.getOriginalCommentPosition()).isEqualTo(6);
@@ -4302,6 +4333,38 @@ public final class JsDocInfoParserTest extends BaseJSTypeTestCase {
 
   public void testParsePolymerBehaviorExtra() {
     parse("@polymerBehavior \n@polymerBehavior*/", "extra @polymerBehavior tag");
+  }
+
+  public void testParsePolymer() {
+    assertThat(parse("@polymer*/").isPolymer()).isTrue();
+  }
+
+  public void testParsePolymerExtra() {
+    parse("@polymer \n@polymer*/", "extra @polymer tag");
+  }
+
+  public void testParseCustomElement() {
+    assertThat(parse("@customElement*/").isCustomElement()).isTrue();
+  }
+
+  public void testParseCustomElementExtra() {
+    parse("@customElement \n@customElement*/", "extra @customElement tag");
+  }
+
+  public void testParseMixinClass() {
+    assertThat(parse("@mixinClass*/").isMixinClass()).isTrue();
+  }
+
+  public void testParseMixinClassExtra() {
+    parse("@mixinClass \n@mixinClass*/", "extra @mixinClass tag");
+  }
+
+  public void testParseMixinFunction() {
+    assertThat(parse("@mixinFunction*/").isMixinFunction()).isTrue();
+  }
+
+  public void testParseMixinFunctionExtra() {
+    parse("@mixinFunction \n@mixinFunction*/", "extra @mixinFunction tag");
   }
 
   public void testParseWizaction1() {
@@ -4501,9 +4564,9 @@ public final class JsDocInfoParserTest extends BaseJSTypeTestCase {
             + " * @desc this is a description\n"
             + " *****/\n"
             + "function x() {}");
-    Preconditions.checkState(script.isScript());
+    checkState(script.isScript());
     Node fn = script.getFirstChild();
-    Preconditions.checkState(fn.isFunction());
+    checkState(fn.isFunction());
 
     JSDocInfo info = fn.getJSDocInfo();
     assertThat(info.getBlockDescription()).isEqualTo(
@@ -4720,12 +4783,14 @@ public final class JsDocInfoParserTest extends BaseJSTypeTestCase {
             Config.StrictMode.SLOPPY);
 
     StaticSourceFile file = new SimpleSourceFile("testcode", false);
+    Node templateNode = IR.script();
+    templateNode.setStaticSourceFile(file);
 
     JsDocInfoParser jsdocParser = new JsDocInfoParser(
         stream(comment),
         comment,
         0,
-        file,
+        templateNode,
         config,
         errorReporter);
 

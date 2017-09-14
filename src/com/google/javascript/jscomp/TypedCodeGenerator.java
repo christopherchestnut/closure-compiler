@@ -16,14 +16,19 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
+
+import com.google.common.base.Function;
 import com.google.common.base.Joiner;
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Iterables;
 import com.google.javascript.rhino.FunctionTypeI;
 import com.google.javascript.rhino.JSDocInfo;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.ObjectTypeI;
 import com.google.javascript.rhino.TypeI;
+import com.google.javascript.rhino.TypeI.Nullability;
 import com.google.javascript.rhino.TypeIRegistry;
 import com.google.javascript.rhino.jstype.JSTypeNative;
 import java.util.Collection;
@@ -42,7 +47,7 @@ class TypedCodeGenerator extends CodeGenerator {
   TypedCodeGenerator(
       CodeConsumer consumer, CompilerOptions options, TypeIRegistry registry) {
     super(consumer, options);
-    Preconditions.checkNotNull(registry);
+    checkNotNull(registry);
     this.registry = registry;
     this.jsDocInfoPrinter = new JSDocInfoPrinter(options.getUseOriginalNamesInOutput());
   }
@@ -89,13 +94,15 @@ class TypedCodeGenerator extends CodeGenerator {
       return getFunctionAnnotation(node);
     } else if (type.isEnumObject()) {
       return "/** @enum {"
-          + type.toMaybeObjectType().getElementsType().toNonNullAnnotationString()
+          + type.toMaybeObjectType()
+              .getEnumeratedTypeOfEnumObject()
+              .toAnnotationString(Nullability.EXPLICIT)
           + "} */\n";
     } else if (!type.isUnknownType()
         && !type.isBottom()
         && !type.isVoidType()
         && !type.isPrototypeObject()) {
-      return "/** @type {" + node.getTypeI().toNonNullAnnotationString() + "} */\n";
+      return "/** @type {" + node.getTypeI().toAnnotationString(Nullability.EXPLICIT) + "} */\n";
     } else {
       return "";
     }
@@ -106,21 +113,17 @@ class TypedCodeGenerator extends CodeGenerator {
    */
   private String getFunctionAnnotation(Node fnNode) {
     TypeI type = fnNode.getTypeI();
-    Preconditions.checkState(fnNode.isFunction() || type.isFunctionType());
+    checkState(fnNode.isFunction() || type.isFunctionType());
 
     if (type == null || type.isUnknownType()) {
       return "";
     }
 
     FunctionTypeI funType = type.toMaybeFunctionType();
-
     if (type.equals(registry.getNativeType(JSTypeNative.FUNCTION_INSTANCE_TYPE))) {
       return "/** @type {!Function} */\n";
     }
-
     StringBuilder sb = new StringBuilder("/**\n");
-
-
     Node paramNode = null;
     // We need to use the child nodes of the function as the nodes for the
     // parameters of the function type do not have the real parameter names.
@@ -134,12 +137,12 @@ class TypedCodeGenerator extends CodeGenerator {
     }
 
     // Param types
-    int minArgs = funType.getMinArguments();
-    int maxArgs = funType.getMaxArguments();
-    List<TypeI> args = ImmutableList.copyOf(funType.getParameterTypes());
-    for (int i = 0; i < args.size(); i++) {
+    int minArity = funType.getMinArity();
+    int maxArity = funType.getMaxArity();
+    List<TypeI> formals = ImmutableList.copyOf(funType.getParameterTypes());
+    for (int i = 0; i < formals.size(); i++) {
       sb.append(" * ");
-      appendAnnotation(sb, "param", getParameterJSDocType(args, i, minArgs, maxArgs));
+      appendAnnotation(sb, "param", getParameterJSDocType(formals, i, minArity, maxArity));
       sb.append(" ")
           .append(paramNode == null ? "p" + i : paramNode.getString())
           .append("\n");
@@ -153,74 +156,86 @@ class TypedCodeGenerator extends CodeGenerator {
     if (retType != null
         && !retType.isBottom() // There is no annotation for the empty type.
         && !funType.isInterface() // Interfaces never return a value.
-        && !(funType.isConstructor()
-        && retType.isVoidType())) {
+        && !(funType.isConstructor() && retType.isVoidType())) {
       sb.append(" * ");
-      appendAnnotation(sb, "return", retType.toNonNullAnnotationString());
+      appendAnnotation(sb, "return", retType.toAnnotationString(Nullability.EXPLICIT));
       sb.append("\n");
     }
 
-    // Constructor/interface
-    if (funType.isConstructor() || funType.isInterface()) {
-
-      if (funType.isInterface()) {
-        Set<String> interfaces = new TreeSet<>();
-        for (ObjectTypeI interfaceType : funType.getAncestorInterfaces()) {
-          interfaces.add(interfaceType.toAnnotationString());
-        }
-        for (String interfaze : interfaces) {
-          sb.append(" * ");
-          appendAnnotation(sb, "extends", interfaze);
-          sb.append("\n");
-        }
-      }
-
-      if (funType.isConstructor()) {
-        FunctionTypeI superConstructor = funType.getInstanceType().getSuperClassConstructor();
-        if (superConstructor != null) {
-          ObjectTypeI superInstance = superConstructor.getInstanceType();
-          if (!superInstance.toString().equals("Object")) {
-            sb.append(" * ");
-            appendAnnotation(sb, "extends", superInstance.toAnnotationString());
-            sb.append("\n");
-          }
-        }
-        // Avoid duplicates, add implemented type to a set first
-        Set<String> interfaces = new TreeSet<>();
-        for (ObjectTypeI interfaze : funType.getAncestorInterfaces()) {
-          interfaces.add(interfaze.toAnnotationString());
-        }
-        for (String interfaze : interfaces) {
-          sb.append(" * ");
-          appendAnnotation(sb, "implements", interfaze);
-          sb.append("\n");
-        }
-        sb.append(" * @constructor\n");
-      } else if (funType.isStructuralInterface()) {
-        sb.append(" * @record\n");
-      } else if (funType.isInterface()) {
-        sb.append(" * @interface\n");
-      }
+    if (funType.isConstructor()) {
+      appendConstructorAnnotations(sb, funType);
+    } else if (funType.isInterface()) {
+      appendInterfaceAnnotations(sb, funType);
     } else {
       TypeI thisType = funType.getTypeOfThis();
       if (thisType != null && !thisType.isUnknownType() && !thisType.isVoidType()) {
         if (fnNode == null || !thisType.equals(findMethodOwner(fnNode))) {
           sb.append(" * ");
-          appendAnnotation(sb, "this", thisType.toNonNullAnnotationString());
+          appendAnnotation(sb, "this", thisType.toAnnotationString(Nullability.EXPLICIT));
           sb.append("\n");
         }
       }
     }
 
-    Collection<String> typeParams = funType.getTypeParameters();
+    Collection<TypeI> typeParams = funType.getTypeParameters();
     if (!typeParams.isEmpty()) {
       sb.append(" * @template ");
-      Joiner.on(",").appendTo(sb, typeParams);
+      Joiner.on(",").appendTo(sb, Iterables.transform(typeParams, new Function<TypeI, String>() {
+        @Override public String apply(TypeI var) {
+          return formatTypeVar(var);
+        }
+      }));
       sb.append("\n");
     }
 
     sb.append(" */\n");
     return sb.toString();
+  }
+
+  private String formatTypeVar(TypeI var) {
+    return var.toAnnotationString(Nullability.IMPLICIT);
+  }
+
+  // TODO(dimvar): it's awkward that we print @constructor after the extends/implements;
+  // we should print it first, like users write it. Same for @interface and @record.
+  private void appendConstructorAnnotations(StringBuilder sb, FunctionTypeI funType) {
+    FunctionTypeI superConstructor = funType.getInstanceType().getSuperClassConstructor();
+    if (superConstructor != null) {
+      ObjectTypeI superInstance = superConstructor.getInstanceType();
+      if (!superInstance.toString().equals("Object")) {
+        sb.append(" * ");
+        appendAnnotation(sb, "extends", superInstance.toAnnotationString(Nullability.IMPLICIT));
+        sb.append("\n");
+      }
+    }
+    // Avoid duplicates, add implemented type to a set first
+    Set<String> interfaces = new TreeSet<>();
+    for (ObjectTypeI interfaze : funType.getAncestorInterfaces()) {
+      interfaces.add(interfaze.toAnnotationString(Nullability.IMPLICIT));
+    }
+    for (String interfaze : interfaces) {
+      sb.append(" * ");
+      appendAnnotation(sb, "implements", interfaze);
+      sb.append("\n");
+    }
+    sb.append(" * @constructor\n");
+  }
+
+  private void appendInterfaceAnnotations(StringBuilder sb, FunctionTypeI funType) {
+    Set<String> interfaces = new TreeSet<>();
+    for (ObjectTypeI interfaceType : funType.getAncestorInterfaces()) {
+      interfaces.add(interfaceType.toAnnotationString(Nullability.IMPLICIT));
+    }
+    for (String interfaze : interfaces) {
+      sb.append(" * ");
+      appendAnnotation(sb, "extends", interfaze);
+      sb.append("\n");
+    }
+    if (funType.isStructuralInterface()) {
+      sb.append(" * @record\n");
+    } else {
+      sb.append(" * @interface\n");
+    }
   }
 
   // TODO(sdh): This whole method could be deleted if we don't mind adding
@@ -229,7 +244,7 @@ class TypedCodeGenerator extends CodeGenerator {
    * Given a method definition node, returns the {@link ObjectTypeI} corresponding
    * to the class the method is defined on, or null if it is not a prototype method.
    */
-  private static ObjectTypeI findMethodOwner(Node n) {
+  private ObjectTypeI findMethodOwner(Node n) {
     if (n == null) {
       return null;
     }
@@ -238,8 +253,8 @@ class TypedCodeGenerator extends CodeGenerator {
     if (parent.isAssign()) {
       Node target = parent.getFirstChild();
       if (NodeUtil.isPrototypeProperty(target)) {
-        TypeI type = target.getFirstFirstChild().getTypeI();
-        ctor = type != null ? type.toMaybeFunctionType() : null;
+        TypeI type = registry.getType(target.getFirstFirstChild().getQualifiedName());
+        ctor = type != null ? ((ObjectTypeI) type).getConstructor() : null;
       }
     } else if (parent.isClass()) {
       // TODO(sdh): test this case once NTI understands ES6 classes
@@ -252,16 +267,17 @@ class TypedCodeGenerator extends CodeGenerator {
     sb.append("@").append(name).append(" {").append(type).append("}");
   }
 
-  /** Creates a JSDoc-suitable String representation the type of a parameter. */
+  /** Creates a JSDoc-suitable String representation of the type of a parameter. */
   private String getParameterJSDocType(List<TypeI> types, int index, int minArgs, int maxArgs) {
     TypeI type = types.get(index);
-    if (index >= minArgs) {
-      if (maxArgs < Integer.MAX_VALUE || index < types.size() - 1) {
-        return restrictByUndefined(type).toNonNullAnnotationString() + "=";
-      }
-      return "..." + restrictByUndefined(type).toNonNullAnnotationString();
+    if (index < minArgs) {
+      return type.toAnnotationString(Nullability.EXPLICIT);
     }
-    return type.toNonNullAnnotationString();
+    boolean isRestArgument = maxArgs == Integer.MAX_VALUE && index == types.size() - 1;
+    if (isRestArgument) {
+      return "..." + restrictByUndefined(type).toAnnotationString(Nullability.EXPLICIT);
+    }
+    return restrictByUndefined(type).toAnnotationString(Nullability.EXPLICIT) + "=";
   }
 
   /** Removes undefined from a union type. */
@@ -273,10 +289,11 @@ class TypedCodeGenerator extends CodeGenerator {
       return type;
     }
     TypeI restricted = type.restrictByNotNullOrUndefined();
-    if (!type.isNullable()) {
-      return restricted.isBottom() ? type : restricted;
+    if (type.isNullable()) {
+      TypeI nullType = registry.getNativeType(JSTypeNative.NULL_TYPE);
+      return registry.createUnionType(ImmutableList.of(restricted, nullType));
     }
-    TypeI nullType = registry.getNativeType(JSTypeNative.NULL_TYPE);
-    return registry.createUnionType(ImmutableList.of(restricted, nullType));
+    // The bottom type cannot appear in a jsdoc
+    return restricted.isBottom() ? type : restricted;
   }
 }

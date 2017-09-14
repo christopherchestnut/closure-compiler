@@ -27,13 +27,25 @@ public final class CheckMissingSuperTest extends CompilerTestCase {
   }
 
   @Override
-  public void setUp() {
+  protected void setUp() throws Exception {
+    super.setUp();
     setAcceptedLanguage(LanguageMode.ECMASCRIPT_2017);
   }
 
   public void testMissingSuper() {
     testError("class C extends D { constructor() {} }", MISSING_CALL_TO_SUPER);
     testError("class C extends D { constructor() { super.foo(); } }", MISSING_CALL_TO_SUPER);
+  }
+
+  public void testMissingSuper_nestedClass() {
+    // Note that super is only called for anonymous class "E", not C.
+    testError(LINE_JOINER.join(
+        "class C extends D {",
+        "  constructor() { ",
+        "    const E = class extends D { constructor() { super(); } };",
+        "  }",
+        "}"),
+        MISSING_CALL_TO_SUPER);
   }
 
   public void testNoWarning() {
@@ -51,5 +63,13 @@ public final class CheckMissingSuperTest extends CompilerTestCase {
   // before anything else.
   public void testNoWarning_J2CL() {
     testSame("class C extends D { constructor() { C.init(); super(); } }");
+  }
+
+  // Referencing this within a function before calling super is acceptable at runtime so long as
+  // it's never executed before the super() has returned. It's also acceptable since this might
+  // be bound to something other than the class being constructed.
+  public void testNoWarning_thisWithinFunction() {
+    testSame("class C extends D { constructor() { const c = () => this; super(); } }");
+    testSame("class C extends D { constructor() { const c = function() { this; }; super(); } }");
   }
 }

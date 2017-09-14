@@ -27,7 +27,7 @@
 /**
  * These contain the information provided from a change event.
  * @see https://wicg.github.io/IntersectionObserver/#intersection-observer-entry
- * @constructor
+ * @record
  */
 function IntersectionObserverEntry() {}
 
@@ -86,6 +86,14 @@ IntersectionObserverEntry.prototype.intersectionRatio;
 IntersectionObserverEntry.prototype.target;
 
 /**
+ * Whether or not the target is intersecting with the root.
+ * @see https://wicg.github.io/IntersectionObserver/#dom-intersectionobserverentry-isintersecting
+ * @type {boolean}
+ * @const
+ */
+IntersectionObserverEntry.prototype.isIntersecting;
+
+/**
  * Callback for the IntersectionObserver.
  * @see https://wicg.github.io/IntersectionObserver/#intersection-observer-callback
  * @typedef {function(!Array<!IntersectionObserverEntry>,!IntersectionObserver)}
@@ -96,7 +104,7 @@ var IntersectionObserverCallback;
  * Options for the IntersectionObserver.
  * @see https://wicg.github.io/IntersectionObserver/#intersection-observer-init
  * @typedef {{
- *   threshold: (!Array<number>|undefined),
+ *   threshold: (!Array<number>|number|undefined),
  *   root: (!Element|undefined),
  *   rootMargin: (string|undefined)
  * }}

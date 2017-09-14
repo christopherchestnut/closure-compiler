@@ -84,17 +84,14 @@ PerformanceResourceTiming.prototype.encodedBodySize;
 PerformanceResourceTiming.prototype.decodedBodySize;
 /** @type {number|undefined} */
 PerformanceResourceTiming.prototype.workerStart;
+/** @type {string} */ PerformanceResourceTiming.prototype.nextHopProtocol;
 
 /**
- * https://w3c.github.io/navigation-timing/#sec-performance-navigation-types
- * @enum {string}
+ * Possible values are 'navigate', 'reload', 'back_forward', and 'prerender'.
+ * See https://w3c.github.io/navigation-timing/#sec-performance-navigation-types
+ * @typedef {string}
  */
-var NavigationType = {
-  NAVIGATE: 'navigate',
-  RELOAD: 'reload',
-  BACK_FORWARD: 'back_forward',
-  PRERENDER: 'prerender'
-};
+var NavigationType;
 
 /**
  * https://w3c.github.io/navigation-timing/#sec-PerformanceNavigationTiming
@@ -210,8 +207,8 @@ Performance.prototype.clearMarks = function(opt_markName) {};
  * @param {string=} opt_endMark
  * @return {undefined}
  */
-Performance.prototype.measure =
-    function(measureName, opt_startMark, opt_endMark) {};
+Performance.prototype.measure = function(
+    measureName, opt_startMark, opt_endMark) {};
 
 /**
  * @param {string=} opt_measureName
@@ -227,3 +224,60 @@ Window.prototype.performance;
  * @suppress {duplicate}
  */
 var performance;
+
+/**
+ * @constructor
+ * @extends {Performance}
+ */
+function WorkerPerformance() {}
+
+/**
+ * @typedef {function(!PerformanceObserverEntryList, !PerformanceObserver): void}
+ */
+var PerformanceObserverCallback;
+
+/**
+ * See:
+ * https://w3c.github.io/performance-timeline/#the-performanceobserver-interface
+ * @constructor
+ * @param {!PerformanceObserverCallback} callback
+ */
+function PerformanceObserver(callback) {}
+
+/**
+ * @param {!PerformanceObserverInit} options
+ */
+PerformanceObserver.prototype.observe = function(options) {};
+
+/** @return {void} */
+PerformanceObserver.prototype.disconnect = function() {};
+
+/**
+ * @record
+ */
+function PerformanceObserverInit() {}
+
+/** @type {undefined|!Array<string>} */
+PerformanceObserverInit.prototype.entryTypes;
+/** @type {undefined|boolean} */
+PerformanceObserverInit.prototype.buffered;
+
+/**
+ * @constructor
+ */
+function PerformanceObserverEntryList() {}
+
+/** @return {!Array<!PerformanceEntry>} */
+PerformanceObserverEntryList.prototype.getEntries = function() {};
+/**
+ * @param {string} type
+ * @return {!Array<!PerformanceEntry>}
+ */
+PerformanceObserverEntryList.prototype.getEntriesByName = function(type) {};
+/**
+ * @param {string} name
+ * @param {string=} opt_type
+ * @return {!Array<!PerformanceEntry>}
+ */
+PerformanceObserverEntryList.prototype.getEntriesByType = function(
+    name, opt_type) {};

@@ -16,9 +16,9 @@
 
 package com.google.javascript.jscomp;
 
-import static com.google.javascript.jscomp.Es6ToEs3Converter.CANNOT_CONVERT;
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.javascript.jscomp.Es6ToEs3Util.CANNOT_CONVERT;
 
-import com.google.common.base.Preconditions;
 import com.google.javascript.jscomp.ExpressionDecomposer.DecompositionType;
 import com.google.javascript.jscomp.deps.ModuleNames;
 import com.google.javascript.rhino.IR;
@@ -42,7 +42,7 @@ import java.util.Set;
  *   foo($jscomp$classdecl$var0);
  * </code>
  * <p>
- * This must be done before {@link Es6ToEs3Converter}, because that pass only handles classes
+ * This must be done before {@link Es6RewriteClass}, because that pass only handles classes
  * that are declarations or simple assignments.
  * @see Es6RewriteClass#visitClass(NodeTraversal, Node, Node)
  */
@@ -96,7 +96,7 @@ public final class Es6ExtractClasses
     private Deque<ClassDescription> classStack = new LinkedList<>();
 
     private boolean needsInnerNameRewriting(Node classNode, Node parent) {
-      Preconditions.checkArgument(classNode.isClass());
+      checkArgument(classNode.isClass());
       return classNode.getFirstChild().isName() && parent.isName();
     }
 

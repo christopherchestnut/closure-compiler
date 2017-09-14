@@ -54,7 +54,7 @@ public final class ProcessClosurePrimitivesTest extends CompilerTestCase {
   private boolean banGoogBase;
 
   @Override
-  public void setUp() throws Exception {
+  protected void setUp() throws Exception {
     super.setUp();
     setAcceptedLanguage(LanguageMode.ECMASCRIPT_2017);
     additionalCode = null;
@@ -137,7 +137,7 @@ public final class ProcessClosurePrimitivesTest extends CompilerTestCase {
   }
 
   private void testModule(String[] moduleInputs, String[] expected) {
-    test(createModuleStar(moduleInputs), expected, null);
+    test(createModuleStar(moduleInputs), expected);
   }
 
   public void testSimpleProvides() {
@@ -388,19 +388,29 @@ public final class ProcessClosurePrimitivesTest extends CompilerTestCase {
   }
 
   public void testProvideErrorCases2() {
-    test("goog.provide('foo'); /** @type {Object} */ var foo = {};",
-        "/** @type {Object} */ var foo={};", null, WEAK_NAMESPACE_TYPE);
-    test("goog.provide('foo'); /** @type {!Object} */ var foo = {};",
-        "/** @type {!Object} */ var foo={};", null, WEAK_NAMESPACE_TYPE);
-    test("goog.provide('foo.bar'); /** @type {Object} */ foo.bar = {};",
+    test(
+        "goog.provide('foo'); /** @type {Object} */ var foo = {};",
+        "/** @type {Object} */ var foo={};",
+        warning(WEAK_NAMESPACE_TYPE));
+    test(
+        "goog.provide('foo'); /** @type {!Object} */ var foo = {};",
+        "/** @type {!Object} */ var foo={};",
+        warning(WEAK_NAMESPACE_TYPE));
+    test(
+        "goog.provide('foo.bar'); /** @type {Object} */ foo.bar = {};",
         "/** @const */ var foo = {}; /** @type {Object} */ foo.bar = {};",
-        null, WEAK_NAMESPACE_TYPE);
-    test("goog.provide('foo.bar'); /** @type {!Object} */ foo.bar = {};",
+        warning(WEAK_NAMESPACE_TYPE));
+    test(
+        "goog.provide('foo.bar'); /** @type {!Object} */ foo.bar = {};",
         "/** @const */ var foo={}; /** @type {!Object} */ foo.bar={};",
-        null, WEAK_NAMESPACE_TYPE);
+        warning(WEAK_NAMESPACE_TYPE));
 
     test("goog.provide('foo'); /** @type {Object<string>} */ var foo = {};",
         "/** @type {Object<string>} */ var foo={};");
+  }
+
+  public void testProvideInESModule() {
+    testError("import {x} from 'y'; goog.provide('z');", INVALID_CLOSURE_CALL_ERROR);
   }
 
   public void testProvideValidObjectType() {
@@ -459,14 +469,13 @@ public final class ProcessClosurePrimitivesTest extends CompilerTestCase {
   }
 
   public void testProvideInExterns() {
-    allowExternsChanges(true);
+    allowExternsChanges();
 
     test(
         "/** @externs */ goog.provide('animals.Dog');"
             + "/** @constructor */ animals.Dog = function() {}",
         "goog.require('animals.Dog'); new animals.Dog()",
-        "new animals.Dog();",
-        null, null);
+        "new animals.Dog();");
   }
 
   public void testAddDependency() {
@@ -555,12 +564,13 @@ public final class ProcessClosurePrimitivesTest extends CompilerTestCase {
 
   public void testSetCssNameMappingValidity() {
     // Make sure that the keys don't have -'s
-    test("goog.setCssNameMapping({'a': 'b', 'a-a': 'c'})", "", null,
-        INVALID_CSS_RENAMING_MAP);
+    test("goog.setCssNameMapping({'a': 'b', 'a-a': 'c'})", "", warning(INVALID_CSS_RENAMING_MAP));
 
     // In full mode, we check that map(a-b)=map(a)-map(b)
-    test("goog.setCssNameMapping({'a': 'b', 'a-a': 'c'}, 'BY_WHOLE')", "", null,
-        INVALID_CSS_RENAMING_MAP);
+    test(
+        "goog.setCssNameMapping({'a': 'b', 'a-a': 'c'}, 'BY_WHOLE')",
+        "",
+        warning(INVALID_CSS_RENAMING_MAP));
 
     // Unknown mapping type
     testError("goog.setCssNameMapping({foo:'bar'}, 'UNKNOWN');",
@@ -571,8 +581,7 @@ public final class ProcessClosurePrimitivesTest extends CompilerTestCase {
     test(
         createModuleStar("", "goog.provide('goog.ui');", "goog.require('goog.ui');"),
         new String[] {"", "/** @const */ goog.ui = {};", ""},
-        null,
-        XMODULE_REQUIRE_ERROR);
+        warning(XMODULE_REQUIRE_ERROR));
   }
 
   public void testGoodCrossModuleRequire1() {
@@ -1288,8 +1297,8 @@ public final class ProcessClosurePrimitivesTest extends CompilerTestCase {
 
   public void testDefineInExterns() {
     String jsdoc = "/** @define {number} */\n";
-    allowExternsChanges(true);
-    testErrorExterns(jsdoc + "goog.define('value');", null);
+    allowExternsChanges();
+    testErrorExterns(jsdoc + "goog.define('value');");
 
     testErrorExterns("goog.define('name');", MISSING_DEFINE_ANNOTATION);
     testErrorExterns(jsdoc + "goog.define('name.2');", INVALID_DEFINE_NAME_ERROR);
@@ -1297,8 +1306,12 @@ public final class ProcessClosurePrimitivesTest extends CompilerTestCase {
     testErrorExterns(jsdoc + "goog.define(5);", INVALID_ARGUMENT_ERROR);
   }
 
+  private void testErrorExterns(String externs) {
+    testNoWarning(externs, "");
+  }
+
   private void testErrorExterns(String externs, DiagnosticType error) {
-    test(externs, "", null, error, null, null);
+    testError(externs, "", error);
   }
 
   public void testDefineValues() {

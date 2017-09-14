@@ -16,6 +16,8 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
@@ -36,8 +38,7 @@ import java.util.logging.Logger;
  */
 class PhaseOptimizer implements CompilerPass {
 
-  private static final Logger logger =
-      Logger.getLogger(PhaseOptimizer.class.getName());
+  private static final Logger logger = Logger.getLogger(PhaseOptimizer.class.getName());
   private final AbstractCompiler compiler;
   private final PerformanceTracker tracker;
   private final List<CompilerPass> passes;
@@ -78,31 +79,30 @@ class PhaseOptimizer implements CompilerPass {
   }
 
   /**
-   * NOTE(dimvar): There used to be some code that tried various orderings of loopable passes
-   * and picked the fastest one. This code became stale gradually and I decided to remove it.
-   * It was also never tried after the new pass scheduler was written.
-   * If we need to revisit this order in the future, we should write new code to do it.
+   * NOTE(dimvar): There used to be some code that tried various orderings of loopable passes and
+   * picked the fastest one. This code became stale gradually and I decided to remove it. It was
+   * also never tried after the new pass scheduler was written. If we need to revisit this order in
+   * the future, we should write new code to do it.
    *
-   * It is important that inlineVariables and peepholeOptimizations run after inlineFunctions,
+   * <p>It is important that inlineVariables and peepholeOptimizations run after inlineFunctions,
    * because inlineFunctions relies on them to clean up patterns it introduces. This affects our
    * size-based loop-termination heuristic.
    */
   @VisibleForTesting
   static final ImmutableList<String> OPTIMAL_ORDER =
       ImmutableList.of(
-          "inlineFunctions",
-          "inlineVariables",
-          "deadAssignmentsElimination",
-          "collapseObjectLiterals",
-          "removeUnusedVars",
-          "removeUnusedPrototypeProperties",
-          "removeUnusedClassProperties",
-          Compiler.PEEPHOLE_PASS_NAME,
-          "minimizeExitPoints",
-          "removeUnreachableCode");
+          PassNames.INLINE_FUNCTIONS,
+          PassNames.INLINE_VARIABLES,
+          PassNames.DEAD_ASSIGNMENT_ELIMINATION,
+          PassNames.COLLAPSE_OBJECT_LITERALS,
+          PassNames.REMOVE_UNUSED_VARS,
+          PassNames.REMOVE_UNUSED_PROTOTYPE_PROPERTIES,
+          PassNames.REMOVE_UNUSED_CLASS_PROPERTIES,
+          PassNames.PEEPHOLE_OPTIMIZATIONS,
+          PassNames.REMOVE_UNREACHABLE_CODE);
 
-  static final ImmutableList<String> CODE_REMOVING_PASSES = ImmutableList.of(
-      Compiler.PEEPHOLE_PASS_NAME, Compiler.UNREACHABLE_CODE_ELIM_NAME);
+  static final ImmutableList<String> CODE_REMOVING_PASSES =
+      ImmutableList.of(PassNames.PEEPHOLE_OPTIMIZATIONS, PassNames.REMOVE_UNREACHABLE_CODE);
 
   static final int MAX_LOOPS = 100;
   static final String OPTIMIZE_LOOP_ERROR =
@@ -114,8 +114,6 @@ class PhaseOptimizer implements CompilerPass {
   /**
    * @param comp the compiler that owns/creates this.
    * @param tracker an optional performance tracker
-   * @param range the progress range for the process function or null
-   *        if progress should not be reported.
    */
   PhaseOptimizer(AbstractCompiler comp, PerformanceTracker tracker) {
     this.compiler = comp;
@@ -279,7 +277,15 @@ class PhaseOptimizer implements CompilerPass {
 
     @Override
     public void process(Node externs, Node root) {
-      logger.fine(name);
+      if (!factory.featureSet().contains(compiler.getFeatureSet())) {
+        logger.warning(
+            "Skipping pass " + name
+                + "\nfactory features:  " + factory.featureSet()
+                + "\ncompiler features: " + compiler.getFeatureSet());
+        return;
+      }
+
+      logger.fine("Running pass " + name);
       if (sanityCheck != null) {
         // Before running the pass, clone the AST so you can sanity-check the
         // changed AST against the clone after the pass finishes.
@@ -388,7 +394,7 @@ class PhaseOptimizer implements CompilerPass {
 
     @Override
     public void process(Node externs, Node root) {
-      Preconditions.checkState(!inLoop, "Nested loops are forbidden");
+      checkState(!inLoop, "Nested loops are forbidden");
       inLoop = true;
       optimizePasses();
       this.isCodeRemovalLoop = isCodeRemovalLoop();
@@ -467,7 +473,7 @@ class PhaseOptimizer implements CompilerPass {
               return;
             }
           } else {
-            Preconditions.checkState(state == State.RUN_PASSES_THAT_CHANGED_STH_IN_PREV_ITER);
+            checkState(state == State.RUN_PASSES_THAT_CHANGED_STH_IN_PREV_ITER);
             if (!lastIterMadeChanges || !isAstSufficientlyChanging(previousAstSize, astSize)) {
               state = State.RUN_PASSES_NOT_RUN_IN_PREV_ITER;
             }

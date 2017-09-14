@@ -36,16 +36,17 @@ import java.util.Map;
  *
  */
 public class Scope implements StaticScope, Serializable {
-  private final Map<String, Var> vars = new LinkedHashMap<>();
-  private final Scope parent;
-  protected final int depth;
+  protected final Map<String, Var> vars = new LinkedHashMap<>();
+  protected Scope parent;
+  protected int depth;
   protected final Node rootNode;
   private Var arguments;
 
   /**
-   * Creates a Scope given the parent Scope and the root node of the scope.
-   * @param parent  The parent Scope. Cannot be null.
-   * @param rootNode
+   * Creates a Scope given the parent Scope and the root node of the current scope.
+   *
+   * @param parent The parent Scope. Cannot be null.
+   * @param rootNode The root node of the curent scope. Cannot be null.
    */
   Scope(Scope parent, Node rootNode) {
     checkNotNull(parent);
@@ -132,7 +133,12 @@ public class Scope implements StaticScope, Serializable {
   void undeclare(Var var) {
     checkState(var.scope == this);
     checkState(vars.get(var.name).equals(var));
-    vars.remove(var.name);
+    undeclareInteral(var);
+  }
+
+  /** Without any safety checks */
+  void undeclareInteral(Var var) {
+     vars.remove(var.name);
   }
 
   @Override
@@ -169,8 +175,9 @@ public class Scope implements StaticScope, Serializable {
    */
   public Var getArgumentsVar() {
     if (isGlobal() || isModuleScope()) {
-      throw new IllegalStateException("No arguments var for scope: " + this);
+      return null;
     }
+
     if (!isFunctionScope() || rootNode.isArrowFunction()) {
       return parent.getArgumentsVar();
     }
@@ -179,6 +186,18 @@ public class Scope implements StaticScope, Serializable {
       arguments = Var.makeArgumentsVar(this);
     }
     return arguments;
+  }
+
+  /**
+   * Use only when in a function block scope and want to tell if a name is either at the top of the
+   * function block scope or the function parameter scope
+   */
+  public boolean isDeclaredInFunctionBlockOrParameter(String name) {
+    // In ES6, we create a separate "function parameter scope" above the function block scope to
+    // handle default parameters. Since nothing in the function block scope is allowed to shadow
+    // the variables in the function scope, we treat the two scopes as one in this method.
+    checkState(isFunctionBlockScope());
+    return isDeclared(name, false) || parent.isDeclared(name, false);
   }
 
   /**
@@ -191,10 +210,7 @@ public class Scope implements StaticScope, Serializable {
         return true;
       }
 
-      // In ES6, we create a separate "function parameter scope" above the function block scope to
-      // handle default parameters. Since nothing in the function block scope is allowed to shadow
-      // the variables in the function scope, we treat the two scopes as one in this method.
-      if (scope.isFunctionBlockScope() || (scope.parent != null && recurse)) {
+      if (scope.parent != null && recurse) {
         scope = scope.parent;
         continue;
       }
@@ -208,6 +224,33 @@ public class Scope implements StaticScope, Serializable {
    */
   public Iterable<? extends Var> getVarIterable() {
     return vars.values();
+  }
+
+  /**
+   * Return an iterable over all of the variables accessible to this scope (i.e. the variables in
+   * this scope and its parent scopes). Any variables declared in the local scope with the same name
+   * as a variable declared in a parent scope gain precedence - if let x exists in the block scope,
+   * a declaration let x from the parent scope would not be included because the parent scope's
+   * variable gets shadowed.
+   *
+   * <p>The iterable contains variables from inner scopes before adding variables from outer parent
+   * scopes.
+   *
+   * <p>We do not include the special 'arguments' variable.
+   */
+  public Iterable<? extends Var> getAllAccessibleVariables() {
+    Map<String, Var> accessibleVars = new LinkedHashMap<>();
+    Scope s = this;
+
+    while (s != null) {
+      for (Var v : s.getVarIterable()) {
+        if (!accessibleVars.containsKey(v.getName())){
+          accessibleVars.put(v.getName(), v);
+        }
+      }
+      s = s.getParent();
+    }
+    return accessibleVars.values();
   }
 
   public Iterable<? extends Var> getAllSymbols() {
@@ -267,6 +310,18 @@ public class Scope implements StaticScope, Serializable {
    */
   boolean isHoistScope() {
     return isFunctionScope() || isFunctionBlockScope() || isGlobal() || isModuleScope();
+  }
+
+  public static boolean isHoistScopeRootNode(Node n) {
+    switch (n.getToken()) {
+      case FUNCTION:
+      case MODULE_BODY:
+      case ROOT:
+      case SCRIPT:
+        return true;
+      default:
+        return NodeUtil.isFunctionBlock(n);
+    }
   }
 
   /**

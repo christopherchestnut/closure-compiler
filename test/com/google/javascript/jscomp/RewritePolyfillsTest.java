@@ -46,7 +46,7 @@ public final class RewritePolyfillsTest extends CompilerTestCase {
   }
 
   @Override
-  public void setUp() throws Exception {
+  protected void setUp() throws Exception {
     super.setUp();
     injectableLibraries.clear();
     polyfillTable.clear();
@@ -109,7 +109,7 @@ public final class RewritePolyfillsTest extends CompilerTestCase {
   }
 
   private void testInjects(String code, DiagnosticType warning, String... libraries) {
-    test(code, addLibraries(code, libraries), null, warning);
+    test(code, addLibraries(code, libraries), warning(warning));
   }
 
   public void testEmpty() {

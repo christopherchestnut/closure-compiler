@@ -16,7 +16,8 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.common.base.Preconditions;
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
 import com.google.javascript.rhino.JSDocInfo;
 import com.google.javascript.rhino.JSTypeExpression;
@@ -33,7 +34,7 @@ final class CheckJSDoc extends AbstractPostOrderCallback implements HotSwapCompi
 
   public static final DiagnosticType MISPLACED_MSG_ANNOTATION =
       DiagnosticType.disabled("JSC_MISPLACED_MSG_ANNOTATION",
-          "Misplaced message annotation. @desc, @hidden, and @meaning annotations should only"
+          "Misplaced message annotation. @desc, @hidden, and @meaning annotations should only "
                   + "be on message nodes.");
 
   public static final DiagnosticType MISPLACED_ANNOTATION =
@@ -64,6 +65,11 @@ final class CheckJSDoc extends AbstractPostOrderCallback implements HotSwapCompi
   public static final DiagnosticType INVALID_MODIFIES_ANNOTATION =
       DiagnosticType.error(
           "JSC_INVALID_MODIFIES_ANNOTATION", "@modifies may only appear in externs files.");
+
+  public static final DiagnosticType INVALID_DEFINE_ON_LET =
+      DiagnosticType.error(
+          "JSC_INVALID_DEFINE_ON_LET",
+          "variables annotated with @define may only be declared with VARs, ASSIGNs, or CONSTs");
 
   private final AbstractCompiler compiler;
 
@@ -97,6 +103,7 @@ final class CheckJSDoc extends AbstractPostOrderCallback implements HotSwapCompi
     validateTypedefs(n, info);
     validateNoSideEffects(n, info);
     validateAbstractJsDoc(n, info);
+    validateDefinesDeclaration(n, info);
   }
 
   private void validateTypedefs(Node n, JSDocInfo info) {
@@ -372,7 +379,7 @@ final class CheckJSDoc extends AbstractPostOrderCallback implements HotSwapCompi
     if (nameNode.isName() || nameNode.isStringKey()) {
       return nameNode.getString().startsWith("MSG_");
     } else {
-      Preconditions.checkState(nameNode.isQualifiedName());
+      checkState(nameNode.isQualifiedName());
       return nameNode.getLastChild().getString().startsWith("MSG_");
     }
   }
@@ -502,6 +509,15 @@ final class CheckJSDoc extends AbstractPostOrderCallback implements HotSwapCompi
     }
     if (info.isNoSideEffects()) {
       report(n, INVALID_NO_SIDE_EFFECT_ANNOTATION);
+    }
+  }
+
+  /**
+   * Check that a let declaration is not used with {@defines}
+   */
+  private void validateDefinesDeclaration(Node n, JSDocInfo info) {
+    if (info != null && info.isDefine() && n.isLet()) {
+      report(n, INVALID_DEFINE_ON_LET);
     }
   }
 }

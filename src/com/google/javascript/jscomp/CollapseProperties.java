@@ -16,10 +16,15 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
 import com.google.javascript.jscomp.GlobalNamespace.Name;
 import com.google.javascript.jscomp.GlobalNamespace.Ref;
+import com.google.javascript.jscomp.Normalize.PropagateConstantAnnotationsOverVars;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.JSDocInfo;
 import com.google.javascript.rhino.Node;
@@ -107,6 +112,10 @@ class CollapseProperties implements CompilerPass {
     for (Name name : globalNames) {
       collapseDeclarationOfNameAndDescendants(name, name.getBaseName());
     }
+
+    // This shouldn't be necessary, this pass should already be setting new constants as constant.
+    // TODO(b/64256754): Investigate.
+    (new PropagateConstantAnnotationsOverVars(compiler, false)).process(externs, root);
   }
 
   /**
@@ -166,10 +175,9 @@ class CollapseProperties implements CompilerPass {
    * the parent would be the NAME node.
    */
   private static Node getValueParent(Ref ref) {
-    // there are two types of declarations: VARs and ASSIGNs
-    return (ref.node.getParent() != null
-        && ref.node.getParent().isVar())
-        ? ref.node : ref.node.getParent();
+    // there are four types of declarations: VARs, LETs, CONSTs, and ASSIGNs
+    Node n = ref.node.getParent();
+    return (n != null && NodeUtil.isNameDeclaration(n)) ? ref.node : ref.node.getParent();
   }
 
   /**
@@ -233,7 +241,7 @@ class CollapseProperties implements CompilerPass {
         name.getFullName());
     Node varNode = IR.var(nameNode).useSourceInfoIfMissingFrom(nameNode);
 
-    Preconditions.checkState(ref.node.getParent().isExprResult());
+    checkState(ref.node.getParent().isExprResult());
     Node parent = ref.node.getParent();
     Node grandparent = parent.getParent();
     grandparent.replaceChild(parent, varNode);
@@ -330,7 +338,7 @@ class CollapseProperties implements CompilerPass {
     Token nType = n.getToken();
     boolean isQName = nType == Token.NAME || nType == Token.GETPROP;
     boolean isObjKey = NodeUtil.isObjectLitKey(n);
-    Preconditions.checkState(isObjKey || isQName);
+    checkState(isObjKey || isQName);
     if (isQName) {
       for (int i = 1; i < depth && n.hasChildren(); i++) {
         n = n.getFirstChild();
@@ -465,7 +473,7 @@ class CollapseProperties implements CompilerPass {
       compiler.reportChangeToEnclosingScope(varNode);
     } else {
       // This must be a complex assignment.
-      Preconditions.checkNotNull(ref.getTwin());
+      checkNotNull(ref.getTwin());
 
       // BEFORE:
       // ... (x.y = 3);
@@ -531,7 +539,9 @@ class CollapseProperties implements CompilerPass {
             n, alias, canCollapseChildNames);
         break;
       case VAR:
-        updateObjLitOrFunctionDeclarationAtVarNode(n, canCollapseChildNames);
+      case LET:
+      case CONST:
+        updateObjLitOrFunctionDeclarationAtVariableNode(n, canCollapseChildNames);
         break;
       case FUNCTION:
         updateFunctionDeclarationAtFunctionNode(n, canCollapseChildNames);
@@ -555,6 +565,9 @@ class CollapseProperties implements CompilerPass {
     // (e.g. a var node before the exprstmt) because the exprstmt might be
     // the child of an if statement that's not inside a block).
 
+    // All qualified names - even for variables that are initially declared as LETS and CONSTS -
+    // are being declared as VAR statements, but this is not incorrect because
+    // we are only collapsing for global names.
     Ref ref = n.getDeclaration();
     Node rvalue = ref.node.getNext();
     Node varNode = new Node(Token.VAR);
@@ -602,9 +615,8 @@ class CollapseProperties implements CompilerPass {
 
     if (canCollapseChildNames) {
       if (isObjLit) {
-        declareVarsForObjLitValues(
-            n, alias, rvalue,
-            varNode, varNode.getPrevious(), varParent);
+        declareVariablesForObjLitValues(
+            n, alias, rvalue, varNode, varNode.getPrevious(), varParent);
       }
 
       addStubsForUndeclaredProperties(n, alias, varParent, varNode);
@@ -642,13 +654,12 @@ class CollapseProperties implements CompilerPass {
   }
 
   /**
-   * Updates the first initialization (a.k.a "declaration") of a global name
-   * that occurs at a VAR node. See comment for
-   * {@link #updateObjLitOrFunctionDeclaration}.
+   * Updates the first initialization (a.k.a "declaration") of a global name that occurs at a VAR
+   * node. See comment for {@link #updateObjLitOrFunctionDeclaration}.
    *
    * @param n An object representing a global name (e.g. "a")
    */
-  private void updateObjLitOrFunctionDeclarationAtVarNode(
+  private void updateObjLitOrFunctionDeclarationAtVariableNode(
       Name n, boolean canCollapseChildNames) {
     if (!canCollapseChildNames) {
       return;
@@ -657,22 +668,23 @@ class CollapseProperties implements CompilerPass {
     Ref ref = n.getDeclaration();
     String name = ref.node.getString();
     Node rvalue = ref.node.getFirstChild();
-    Node varNode = ref.node.getParent();
-    Node grandparent = varNode.getParent();
+    Node variableNode = ref.node.getParent();
+    Node grandparent = variableNode.getParent();
 
     boolean isObjLit = rvalue.isObjectLit();
 
     if (isObjLit) {
-      declareVarsForObjLitValues(n, name, rvalue, varNode, varNode.getPrevious(), grandparent);
+      declareVariablesForObjLitValues(
+          n, name, rvalue, variableNode, variableNode.getPrevious(), grandparent);
     }
 
-    addStubsForUndeclaredProperties(n, name, grandparent, varNode);
+    addStubsForUndeclaredProperties(n, name, grandparent, variableNode);
 
     if (isObjLit && n.canEliminate()) {
-      varNode.removeChild(ref.node);
-      compiler.reportChangeToEnclosingScope(varNode);
-      if (!varNode.hasChildren()) {
-        grandparent.removeChild(varNode);
+      variableNode.removeChild(ref.node);
+      compiler.reportChangeToEnclosingScope(variableNode);
+      if (!variableNode.hasChildren()) {
+        grandparent.removeChild(variableNode);
       }
 
       // Clear out the object reference, since we've eliminated it from the
@@ -711,7 +723,7 @@ class CollapseProperties implements CompilerPass {
    *     (may be null)
    * @param varParent {@code varNode}'s parent
    */
-  private void declareVarsForObjLitValues(
+  private void declareVariablesForObjLitValues(
       Name objlitName,
       String alias,
       Node objlit,
@@ -726,8 +738,8 @@ class CollapseProperties implements CompilerPass {
       Node value = key.getFirstChild();
       nextKey = key.getNext();
 
-      // A get or a set can not be rewritten as a VAR.
-      if (key.isGetterDef() || key.isSetterDef()) {
+      // A computed property, or a get or a set can not be rewritten as a VAR.
+      if (key.isGetterDef() || key.isSetterDef() || key.isComputedProp()) {
         continue;
       }
 
@@ -809,9 +821,9 @@ class CollapseProperties implements CompilerPass {
    * @param addAfter The child of after which new variables should be added
    */
   private void addStubsForUndeclaredProperties(Name n, String alias, Node parent, Node addAfter) {
-    Preconditions.checkState(n.canCollapseUnannotatedChildNames(), n);
-    Preconditions.checkArgument(NodeUtil.isStatementBlock(parent), parent);
-    Preconditions.checkNotNull(addAfter);
+    checkState(n.canCollapseUnannotatedChildNames(), n);
+    checkArgument(NodeUtil.isStatementBlock(parent), parent);
+    checkNotNull(addAfter);
     if (n.props == null) {
       return;
     }

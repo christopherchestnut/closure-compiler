@@ -16,8 +16,9 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.base.Preconditions.checkArgument;
+
 import com.google.common.base.Joiner;
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
 import com.google.javascript.rhino.Node;
 import java.util.ArrayList;
@@ -91,7 +92,7 @@ public final class RenameVarsTest extends CompilerTestCase {
   @Override
   protected void setUp() throws Exception {
     super.setUp();
-    validateAstChangeMarking(false);
+    disableValidateAstChangeMarking();
     previouslyUsedMap = new VariableMap(ImmutableMap.<String, String>of());
     prefix = DEFAULT_PREFIX;
     withClosurePass = false;
@@ -102,8 +103,6 @@ public final class RenameVarsTest extends CompilerTestCase {
     shouldShadow = false;
     preferStableNames = false;
     nameGenerator = null;
-
-    // TODO(johnlenz): Enable Normalize during these tests.
   }
 
   public void testRenameSimple() {
@@ -121,6 +120,18 @@ public final class RenameVarsTest extends CompilerTestCase {
         "(function (a, b) {}); (function (a, b) {});");
     test("function f1(v1, v2) {}; function f2(v3, v4) {};",
         "function c(a, b) {}; function d(a, b) {};");
+  }
+
+  public void testRenameLocals_let() {
+    test(
+        "(function () { let var1 = 0; let another = 1; });",
+        "(function () { let a = 0; let b = 1; });");
+  }
+
+  public void testRenameLocals_const() {
+    test(
+        "(function () { const var1 = 0; const another = 1; });",
+        "(function () { const a = 0; const b = 1; });");
   }
 
   public void testRenameLocalsToSame() {
@@ -218,27 +229,33 @@ public final class RenameVarsTest extends CompilerTestCase {
   }
 
   public void testBleedingRecursiveFunctions2() {
-    test("function f() {" +
-         "  var x = function a(x) { return x ? 1 : a(1); };" +
-         "  var y = function b(x) { return x ? 2 : b(2); };" +
-         "}",
-         "function d() {" +
-         "  var e = function b(a) { return a ? 1 : b(1); };" +
-         "  var f = function a(c) { return c ? 2 : a(2); };" +
-         "}");
+    test(
+        LINE_JOINER.join(
+            "function f() {",
+            "  var x = function a(x) { return x ? 1 : a(1); };",
+            "  var y = function b(x) { return x ? 2 : b(2); };",
+            "}"),
+        LINE_JOINER.join(
+            "function d() {",
+            "  var e = function a(b) { return b ? 1 : a(1); };",
+            "  var f = function c(a) { return a ? 2 : c(2); };",
+            "}"));
   }
 
   public void testBleedingRecursiveFunctions3() {
-    test("function f() {" +
-         "  var x = function a(x) { return x ? 1 : a(1); };" +
-         "  var y = function b(x) { return x ? 2 : b(2); };" +
-         "  var z = function c(x) { return x ? y : c(2); };" +
-         "}",
-         "function f() {" +
-         "  var g = function c(a) { return a ? 1 : c(1); };" +
-         "  var d = function a(b) { return b ? 2 : a(2); };" +
-         "  var h = function b(e) { return e ? d : b(2); };" +
-         "}");
+    test(
+        LINE_JOINER.join(
+            "function f() {",
+            "  var x = function a(x) { return x ? 1 : a(1); };",
+            "  var y = function b(x) { return x ? 2 : b(2); };",
+            "  var z = function c(x) { return x ? y : c(2); };",
+            "}"),
+        LINE_JOINER.join(
+            "function f() {",
+            "  var g = function a(c) { return c ? 1 : a(1); };",
+            "  var d = function b(a) { return a ? 2 : b(2); };",
+            "  var h = function e(b) { return b ? d : e(2); };",
+            "}"));
   }
 
   public void testBleedingFunctionInBlocks() {
@@ -254,12 +271,12 @@ public final class RenameVarsTest extends CompilerTestCase {
 
   public void testRenameWithExterns1() {
     String externs = "var foo;";
-    test(externs, "var bar; foo(bar);", "var a; foo(a);", null, null);
+    test(externs, "var bar; foo(bar);", "var a; foo(a);");
   }
 
   public void testRenameWithExterns2() {
     String externs = "var a;";
-    test(externs, "var b = 5", "var b = 5", null, null);
+    test(externs, "var b = 5", "var b = 5");
   }
 
   public void testDoNotRenameExportedName() {
@@ -423,17 +440,17 @@ public final class RenameVarsTest extends CompilerTestCase {
 
   public void testStableRenameWithExterns1() {
     String externs = "var foo;";
-    test(externs, "var bar; foo(bar);", "var a; foo(a);", null, null);
+    test(externs, "var bar; foo(bar);", "var a; foo(a);");
     previouslyUsedMap = renameVars.getVariableMap();
     test(externs, "var bar, baz; foo(bar, baz);",
-         "var a, b; foo(a, b);", null, null);
+         "var a, b; foo(a, b);");
   }
 
   public void testStableRenameWithExterns2() {
     String externs = "var a;";
-    test(externs, "var b = 5", "var b = 5", null, null);
+    test(externs, "var b = 5", "var b = 5");
     previouslyUsedMap = renameVars.getVariableMap();
-    test(externs, "var b = 5, catty = 9;", "var b = 5, c=9;", null, null);
+    test(externs, "var b = 5, catty = 9;", "var b = 5, c=9;");
   }
 
   public void testStableRenameWithNameOverlap() {
@@ -477,7 +494,7 @@ public final class RenameVarsTest extends CompilerTestCase {
 
     String externs = "var b;";
     test(externs, "function Foo(v1, v2) {return v1;} Foo(b);",
-         "function a(d, c) {return d;} a(b);", null, null);
+         "function a(d, c) {return d;} a(b);");
   }
 
   public void testStableRenameSimpleGlobalNameExterned() {
@@ -488,7 +505,7 @@ public final class RenameVarsTest extends CompilerTestCase {
 
     String externs = "var Foo;";
     test(externs, "function Foo(v1, v2, v0) {return v1;} Foo();",
-         "function Foo(b, c, a) {return b;} Foo();", null, null);
+         "function Foo(b, c, a) {return b;} Foo();");
   }
 
   public void testStableRenameWithPrefix1AndUnstableLocalNames() {
@@ -637,6 +654,224 @@ public final class RenameVarsTest extends CompilerTestCase {
          "var $a$$ = function($a$$, $b$$, $c$$){}");
   }
 
+  public void testArrowFunctions(){
+    test("foo => {return foo + 3;}",
+        "a => {return a + 3;}");
+
+    test("(foo, bar) => {return foo + bar + 3;}",
+        "(a, b) => {return a + b + 3;}");
+  }
+
+  public void testClasses() {
+    test("class fooBar {}",
+        "class a {}");
+
+    test(
+        LINE_JOINER.join(
+            "class fooBar {",
+            "  constructor(foo, bar) {",
+            "    this.foo = foo;",
+            "    this.bar = bar;",
+            "  }",
+            "}",
+            "var x = new fooBar(2, 3);"),
+        LINE_JOINER.join(
+            "class a {",
+            "  constructor(b, c) {",
+            "    this.foo = b;",
+            "    this.bar = c;",
+            "  }",
+            "}",
+            "var d = new a(2, 3);"));
+
+    test(
+        LINE_JOINER.join(
+            "class fooBar {",
+            "  constructor(foo, bar) {",
+            "    this.foo = foo;",
+            "    this.bar = bar;",
+            "  }",
+            "  func(x) {",
+            "    return this.foo + x;",
+            "  }",
+            "}",
+            "var x = new fooBar(2,3);",
+            "var abcd = x.func(5);"),
+        LINE_JOINER.join(
+            "class b {",
+            "  constructor(a, c) {",
+            "    this.foo = a;",
+            "    this.bar = c;",
+            "  }",
+            "  func(a) {",
+            "    return this.foo + a;",
+            "  }",
+            "}",
+            "var d = new b(2,3);",
+            "var e = d.func(5);"
+            ));
+
+  }
+
+  public void testLetConst() {
+    test("let xyz;",
+        "let a;"
+    );
+
+    test("const xyz = 1;",
+        "const a = 1");
+
+    test(
+        LINE_JOINER.join(
+            "let zyx = 1; {",
+            "  const xyz = 1;",
+            "  let zyx = 2;",
+            "  zyx = 3;",
+            "}",
+            "let xyz = 'potato';",
+            "zyx = 4;"
+        ),
+        LINE_JOINER.join(
+            "let a = 1; {",
+            "  const c = 1;",
+            "  let b = 2;",
+            "  b = 3;",
+            "}",
+            "let d = 'potato';",
+            "a = 4;"));
+  }
+
+  public void testGenerators() {
+    test(
+        LINE_JOINER.join(
+            "function* gen() {",
+            "  var xyz = 3;",
+            "  yield xyz + 4;",
+            "}",
+            "gen().next()"
+        ),
+        LINE_JOINER.join(
+            "function* a() {",
+            "  var b = 3;",
+            "  yield b + 4;",
+            "}",
+            "a().next()"));
+  }
+
+  public void testForOf() {
+    test(
+        "for (var item of items) {}",
+        "for (var a of items) {}");
+  }
+
+  public void testTemplateStrings() {
+    test(
+        LINE_JOINER.join(
+            "var name = 'Foo';",
+            "`My name is ${name}`;"
+        ),
+        LINE_JOINER.join(
+            "var a = 'Foo';",
+            "`My name is ${a}`;"));
+  }
+
+  public void testArrayDestructuring() {
+    test("var [x, y, z] = [1, 2, 3];",
+        "var [a, b, c] = [1, 2, 3];");
+  }
+
+  public void testObjectDestructuring() {
+    test(
+        LINE_JOINER.join(
+            "var obj = {p: 5, h: false};",
+            "var {p, h} = obj;"),
+        LINE_JOINER.join(
+            "var a = {p: 5, h: false};",
+            "var {p, h} = a;"));
+
+   test(
+        LINE_JOINER.join(
+            "var obj = {p: 5, h: false};",
+            "var {p: x, h: y} = obj;"),
+        LINE_JOINER.join(
+            "var a = {p: 5, h: false};",
+            "var {p: b, h: c} = a;"));
+  }
+
+  public void testDefaultFunction() {
+    test(
+        LINE_JOINER.join(
+            "function f(x, y=12) {",
+            "  return x * y;",
+            "}"
+        ),
+        LINE_JOINER.join(
+            "function c(a, b=12) {",
+            "  return a * b;",
+            "}"));
+  }
+
+  public void testRestFunction() {
+    test(
+        LINE_JOINER.join(
+            "function f(x, ...y) {",
+            "  return x * y[0];",
+            "}"
+        ),
+        LINE_JOINER.join(
+            "function c(a, ...b) {",
+            "  return a * b[0];",
+            "}"));
+  }
+
+  public void testObjectLiterals() {
+    test(
+        LINE_JOINER.join(
+            "var objSuper = {",
+            "  f: 'potato'",
+            "};",
+            "var obj = {",
+            "  __proto__: objSuper,",
+            "  g: false,",
+            "  x() {",
+            "    return super.f;",
+            "  }",
+            "};",
+            "obj.x();"
+        ),
+        LINE_JOINER.join(
+            "var a = {",
+            "  f: 'potato'",
+            "};",
+            "var b = {",
+            "  __proto__: a,",
+            "  g: false,",
+            "  x() {",
+            "    return super.f;",
+            "  }",
+            "};",
+            "b.x();"));
+  }
+
+  public void testImport1() {
+    test("import name from './other.js'; use(name);", "import a from './other.js'; use(a);");
+
+    test(
+        "import * as name from './other.js'; use(name);",
+        "import * as a from './other.js'; use(a);");
+
+    test(
+        "import {default as name} from './other.js'; use(name);",
+        "import {default as a} from './other.js'; use(a);");
+  }
+
+  public void testImport2() {
+    withNormalize = true;
+    test(
+        "import {name} from './other.js'; use(name);",
+        "import {name as a} from './other.js'; use(a);");
+  }
+
   private void testRenameMapUsingOldMap(String input, String expected,
                                         VariableMap expectedMap) {
     previouslyUsedMap = renameVars.getVariableMap();
@@ -657,7 +892,7 @@ public final class RenameVarsTest extends CompilerTestCase {
 
   private void testRenameMap(String externs, String input, String expected,
                              VariableMap expectedRenameMap) {
-    test(externs, input, expected, null, null);
+    test(externs, input, expected);
     VariableMap renameMap = renameVars.getVariableMap();
     assertVariableMapsEqual(expectedRenameMap, renameMap);
   }
@@ -695,7 +930,7 @@ public final class RenameVarsTest extends CompilerTestCase {
   }
 
   private VariableMap makeVariableMap(String... keyValPairs) {
-    Preconditions.checkArgument(keyValPairs.length % 2 == 0);
+    checkArgument(keyValPairs.length % 2 == 0);
 
     ImmutableMap.Builder<String, String> renameMap = ImmutableMap.builder();
     for (int i = 0; i < keyValPairs.length; i += 2) {

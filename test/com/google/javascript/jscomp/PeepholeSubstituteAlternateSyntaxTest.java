@@ -35,24 +35,27 @@ public final class PeepholeSubstituteAlternateSyntaxTest extends CompilerTestCas
       "var Array = function f(a){};\n" +
       "window.foo = null;\n";
 
-  private boolean late = true;
+  private boolean late;
+  private boolean retraverseOnChange;
 
   public PeepholeSubstituteAlternateSyntaxTest() {
     super(FOLD_CONSTANTS_TEST_EXTERNS);
   }
 
   @Override
-  public void setUp() throws Exception {
+  protected void setUp() throws Exception {
     super.setUp();
     late = true;
+    retraverseOnChange = false;
     disableNormalize();
   }
 
   @Override
   protected CompilerPass getProcessor(final Compiler compiler) {
-    PeepholeOptimizationsPass peepholePass = new PeepholeOptimizationsPass(
-        compiler, new PeepholeSubstituteAlternateSyntax(late));
-    peepholePass.setRetraverseOnChange(false);
+    PeepholeOptimizationsPass peepholePass =
+        new PeepholeOptimizationsPass(
+            compiler, getName(), new PeepholeSubstituteAlternateSyntax(late));
+    peepholePass.setRetraverseOnChange(retraverseOnChange);
     return peepholePass;
   }
 
@@ -355,7 +358,7 @@ public final class PeepholeSubstituteAlternateSyntaxTest extends CompilerTestCas
 
     fold("(x=2), foo()", "x=2; foo()");
     fold("foo(), boo();", "foo(); boo()");
-    fold("(a(), b()), (c(), d());", "a(); b(); (c(), d());");
+    fold("(a(), b()), (c(), d());", "a(), b(); c(), d()");
     fold("a(); b(); (c(), d());", "a(); b(); c(); d();");
     fold("foo(), true", "foo();true");
     foldSame("foo();true");
@@ -379,7 +382,7 @@ public final class PeepholeSubstituteAlternateSyntaxTest extends CompilerTestCas
 
   public void testComma3() {
     late = false;
-    test("1, a(), b()", "1; a(); b()");
+    test("1, a(), b()", "1, a(); b()");
     late = true;
     foldSame("1, a(), b()");
   }
@@ -393,7 +396,7 @@ public final class PeepholeSubstituteAlternateSyntaxTest extends CompilerTestCas
 
   public void testComma5() {
     late = false;
-    test("a(), b(), 1", "a();b();1");
+    test("a(), b(), 1", "a(), b(); 1");
     late = true;
     foldSame("a(), b(), 1");
   }
@@ -418,6 +421,15 @@ public final class PeepholeSubstituteAlternateSyntaxTest extends CompilerTestCas
 
     // all possible delimiters used, leave it alone
     testSame("var x=[',', ' ', ';', '{', '}']");
+  }
+
+  public void testTemplateStringToString() {
+    test("`abcde`", "'abcde'");
+    test("`ab cd ef`", "'ab cd ef'");
+    testSame("`hello ${name}`");
+    testSame("tag `hello ${name}`");
+    testSame("tag `hello`");
+    test("`hello ${'foo'}`", "'hello foo'");
   }
 
   public void testBindToCall1() {
@@ -482,7 +494,30 @@ public final class PeepholeSubstituteAlternateSyntaxTest extends CompilerTestCas
     // correct code is in fact generated.
     // The FREE call wrapping should be moved out of the code generator
     // and into a denormalizing pass.
-    new StringCompareTestCase().testBindToCall3();
+    disableCompareAsTree();
+    retraverseOnChange = true;
+    late = false;
+
+    test("(goog.bind(f.m))()", "(0,f.m)()");
+    test("(goog.bind(f.m,a))()", "f.m.call(a)");
+
+    test("(goog.bind(f.m))(a)", "(0,f.m)(a)");
+    test("(goog.bind(f.m,a))(b)", "f.m.call(a,b)");
+
+    test("(goog.partial(f.m))()", "(0,f.m)()");
+    test("(goog.partial(f.m,a))()", "(0,f.m)(a)");
+
+    test("(goog.partial(f.m))(a)", "(0,f.m)(a)");
+    test("(goog.partial(f.m,a))(b)", "(0,f.m)(a,b)");
+
+    // Without using type information we don't know "f" is a function.
+    testSame("f.m.bind()()");
+    testSame("f.m.bind(a)()");
+    testSame("f.m.bind()(a)");
+    testSame("f.m.bind(a)(b)");
+
+    // Don't rewrite if the bind isn't the immediate call target
+    testSame("goog.bind(f.m).call(g)");
   }
 
   public void testSimpleFunctionCall1() {
@@ -518,43 +553,5 @@ public final class PeepholeSubstituteAlternateSyntaxTest extends CompilerTestCas
   public void testNoRotateInfiniteLoop() {
     test("1/x * (y/1 * (1/z))", "1/x * (y/1) * (1/z)");
     testSame("1/x * (y/1) * (1/z)");
-  }
-
-  private static class StringCompareTestCase extends CompilerTestCase {
-
-    StringCompareTestCase() {
-      super("", false);
-    }
-
-    @Override
-    protected CompilerPass getProcessor(Compiler compiler) {
-      CompilerPass peepholePass =
-        new PeepholeOptimizationsPass(compiler,
-            new PeepholeSubstituteAlternateSyntax(false));
-      return peepholePass;
-    }
-
-    public void testBindToCall3() {
-      test("(goog.bind(f.m))()", "(0,f.m)()");
-      test("(goog.bind(f.m,a))()", "f.m.call(a)");
-
-      test("(goog.bind(f.m))(a)", "(0,f.m)(a)");
-      test("(goog.bind(f.m,a))(b)", "f.m.call(a,b)");
-
-      test("(goog.partial(f.m))()", "(0,f.m)()");
-      test("(goog.partial(f.m,a))()", "(0,f.m)(a)");
-
-      test("(goog.partial(f.m))(a)", "(0,f.m)(a)");
-      test("(goog.partial(f.m,a))(b)", "(0,f.m)(a,b)");
-
-      // Without using type information we don't know "f" is a function.
-      testSame("f.m.bind()()");
-      testSame("f.m.bind(a)()");
-      testSame("f.m.bind()(a)");
-      testSame("f.m.bind(a)(b)");
-
-      // Don't rewrite if the bind isn't the immediate call target
-      testSame("goog.bind(f.m).call(g)");
-    }
   }
 }

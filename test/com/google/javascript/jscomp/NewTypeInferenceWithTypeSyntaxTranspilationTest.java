@@ -18,6 +18,7 @@ package com.google.javascript.jscomp;
 
 import com.google.javascript.jscomp.CompilerOptions.LanguageMode;
 import com.google.javascript.jscomp.newtypes.JSTypeCreatorFromJSDoc;
+import com.google.javascript.jscomp.parsing.parser.FeatureSet;
 
 /**
  * Tests for the new type inference on transpiled code that includes
@@ -35,7 +36,22 @@ public final class NewTypeInferenceWithTypeSyntaxTranspilationTest
   protected void setUp() throws Exception {
     super.setUp();
     compilerOptions.setLanguageIn(LanguageMode.ECMASCRIPT6_TYPED);
-    compilerOptions.setLanguageOut(LanguageMode.ECMASCRIPT3);
+    this.mode = InputLanguageMode.TRANSPILATION;
+  }
+
+  @Override
+  protected PassFactory makePassFactory(String name, final CompilerPass pass) {
+    return new PassFactory(name, true/* one-time pass */) {
+      @Override
+      protected CompilerPass create(AbstractCompiler compiler) {
+        return pass;
+      }
+
+      @Override
+      protected FeatureSet featureSet() {
+        return FeatureSet.TYPESCRIPT;
+      }
+    };
   }
 
   public void testSimpleAnnotationsNoWarnings() {
@@ -183,7 +199,7 @@ public final class NewTypeInferenceWithTypeSyntaxTranspilationTest
         "}",
         "class Bar implements Foo {",
         "}"),
-        GlobalTypeInfo.INTERFACE_METHOD_NOT_IMPLEMENTED);
+        GlobalTypeInfoCollector.INTERFACE_METHOD_NOT_IMPLEMENTED);
 
     typeCheck(LINE_JOINER.join(
         "interface Foo {",
@@ -204,7 +220,7 @@ public final class NewTypeInferenceWithTypeSyntaxTranspilationTest
         "  prop: string;",
         "}",
         "interface Baz extends Foo, Bar {}"),
-        GlobalTypeInfo.SUPER_INTERFACES_HAVE_INCOMPATIBLE_PROPERTIES);
+        GlobalTypeInfoCollector.SUPER_INTERFACES_HAVE_INCOMPATIBLE_PROPERTIES);
   }
 
   public void testAmbientDeclarationsInCode() {

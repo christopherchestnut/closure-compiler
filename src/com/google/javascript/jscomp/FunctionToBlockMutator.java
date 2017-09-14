@@ -15,15 +15,18 @@
  */
 package com.google.javascript.jscomp;
 
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.base.Strings.isNullOrEmpty;
 import static com.google.javascript.jscomp.FunctionArgumentInjector.THIS_MARKER;
 
-import com.google.common.base.Preconditions;
 import com.google.common.base.Supplier;
 import com.google.javascript.jscomp.MakeDeclaredNamesUnique.InlineRenamer;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
@@ -140,7 +143,7 @@ class FunctionToBlockMutator {
     if (hasArgs) {
       Node inlineResult = aliasAndInlineArguments(newBlock,
           args, namesToAlias);
-      Preconditions.checkState(newBlock == inlineResult);
+      checkState(newBlock == inlineResult);
     }
 
     //
@@ -155,7 +158,7 @@ class FunctionToBlockMutator {
     String labelName = getLabelNameForFunction(fnName);
     Node injectableBlock = replaceReturns(
         newBlock, resultName, labelName, needsDefaultResult);
-    Preconditions.checkState(injectableBlock != null);
+    checkState(injectableBlock != null);
 
     return injectableBlock;
   }
@@ -164,7 +167,7 @@ class FunctionToBlockMutator {
   /**
    * @param n The node to inspect
    */
-  private static void rewriteFunctionDeclarations(Node n) {
+  private static Node rewriteFunctionDeclarations(Node n) {
     if (n.isFunction()) {
       if (NodeUtil.isFunctionDeclaration(n)) {
         // Rewrite: function f() {} ==> var f = function() {}
@@ -178,14 +181,31 @@ class FunctionToBlockMutator {
         n.replaceWith(var);
         // readd the function as a function expression
         name.addChildToFront(n);
+
+        return var;
       }
-      return;
+      return null;
     }
 
+    // Keep track of any rewritten functions and hoist them to the top
+    // of the block they are defined in. This isn't fully compliant hoisting
+    // but it does address a large set of use cases.
+    List<Node> functionsToHoist = new ArrayList<>();
     for (Node c = n.getFirstChild(), next; c != null; c = next) {
       next = c.getNext(); // We may rewrite "c"
-      rewriteFunctionDeclarations(c);
+      Node fnVar = rewriteFunctionDeclarations(c);
+      if (fnVar != null) {
+        functionsToHoist.add(0, fnVar);
+      }
     }
+
+    for (Node fnVar : functionsToHoist) {
+      if (n.getFirstChild() != fnVar) {
+        n.addChildToFront(fnVar.detach());
+      }
+    }
+
+    return null;
   }
 
   /**
@@ -216,7 +236,6 @@ class FunctionToBlockMutator {
     }
   }
 
-
   /**
    * Fix-up all local names to be unique for this subtree.
    * @param fnNode A mutable instance of the function to be inlined.
@@ -225,16 +244,14 @@ class FunctionToBlockMutator {
     Supplier<String> idSupplier = compiler.getUniqueNameIdSupplier();
     // Make variable names unique to this instance.
     NodeTraversal.traverseEs6(
-        compiler, fnNode, new MakeDeclaredNamesUnique(
+        compiler,
+        fnNode,
+        new MakeDeclaredNamesUnique(
             new InlineRenamer(
-                compiler.getCodingConvention(),
-                idSupplier,
-                "inline_",
-                isCallInLoop,
-                true,
-                null)));
+                compiler.getCodingConvention(), idSupplier, "inline_", isCallInLoop, true, null),
+            false));
     // Make label names unique to this instance.
-    new RenameLabels(compiler, new LabelNameSupplier(idSupplier), false)
+    new RenameLabels(compiler, new LabelNameSupplier(idSupplier), false, false)
         .process(null, fnNode);
   }
 
@@ -284,7 +301,7 @@ class FunctionToBlockMutator {
       // There are no names to alias, just inline the arguments directly.
       Node result = FunctionArgumentInjector.inject(
           compiler, fnTemplateRoot, null, argMap);
-      Preconditions.checkState(result == fnTemplateRoot);
+      checkState(result == fnTemplateRoot);
       return result;
     } else {
       // Create local alias of names that can not be safely
@@ -336,7 +353,7 @@ class FunctionToBlockMutator {
       // Inline the arguments.
       Node result = FunctionArgumentInjector.inject(
           compiler, fnTemplateRoot, null, newArgMap);
-      Preconditions.checkState(result == fnTemplateRoot);
+      checkState(result == fnTemplateRoot);
 
       // Now that the names have been replaced, add the new aliases for
       // the old names.
@@ -372,8 +389,8 @@ class FunctionToBlockMutator {
   private static Node replaceReturns(
       Node block, String resultName, String labelName,
       boolean resultMustBeSet) {
-    Preconditions.checkNotNull(block);
-    Preconditions.checkNotNull(labelName);
+    checkNotNull(block);
+    checkNotNull(labelName);
 
     Node root = block;
 
@@ -426,7 +443,7 @@ class FunctionToBlockMutator {
    *   a = (void) 0;
    */
   private static void addDummyAssignment(Node node, String resultName) {
-    Preconditions.checkArgument(node.isNormalBlock());
+    checkArgument(node.isNormalBlock());
 
     // A result is needed create a dummy value.
     Node srcLocation = node;
@@ -448,7 +465,7 @@ class FunctionToBlockMutator {
   private static void convertLastReturnToStatement(
       Node block, String resultName) {
     Node ret = block.getLastChild();
-    Preconditions.checkArgument(ret.isReturn());
+    checkArgument(ret.isReturn());
     Node resultNode = getReplacementReturnStatement(ret, resultName);
 
     if (resultNode == null) {
@@ -534,7 +551,7 @@ class FunctionToBlockMutator {
     }
 
     if (current.isReturn()) {
-      Preconditions.checkState(NodeUtil.isStatementBlock(parent));
+      checkState(NodeUtil.isStatementBlock(parent));
 
       Node resultNode = getReplacementReturnStatement(current, resultName);
       Node breakNode = IR.breakNode(IR.labelName(labelName));

@@ -16,6 +16,8 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.common.base.CharMatcher;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
@@ -59,7 +61,7 @@ public final class CodePrinter {
         int lineLengthThreshold,
         boolean createSrcMap,
         SourceMap.DetailLevel sourceMapDetailLevel) {
-      Preconditions.checkState(sourceMapDetailLevel != null);
+      checkState(sourceMapDetailLevel != null);
       this.lineLengthThreshold = lineLengthThreshold <= 0 ? Integer.MAX_VALUE :
         lineLengthThreshold;
       this.createSrcMap = createSrcMap;
@@ -95,15 +97,15 @@ public final class CodePrinter {
      */
     @Override
     void startSourceMapping(Node node) {
-      Preconditions.checkState(sourceMapDetailLevel != null);
-      Preconditions.checkState(node != null);
+      checkState(sourceMapDetailLevel != null);
+      checkState(node != null);
       if (createSrcMap
           && node.getSourceFileName() != null
           && node.getLineno() > 0
           && sourceMapDetailLevel.apply(node)) {
         int line = getCurrentLineIndex();
         int index = getCurrentCharIndex();
-        Preconditions.checkState(line >= 0);
+        checkState(line >= 0);
         Mapping mapping = new Mapping();
         mapping.node = node;
         mapping.start = new FilePosition(line, index);
@@ -122,7 +124,7 @@ public final class CodePrinter {
         Mapping mapping = mappings.pop();
         int line = getCurrentLineIndex();
         int index = getCurrentCharIndex();
-        Preconditions.checkState(line >= 0);
+        checkState(line >= 0);
         mapping.end = new FilePosition(line, index);
       }
     }
@@ -476,7 +478,7 @@ public final class CodePrinter {
      */
     @Override
     boolean breakAfterBlockFor(Node n,  boolean isStatementContext) {
-      Preconditions.checkState(n.isNormalBlock(), n);
+      checkState(n.isNormalBlock(), n);
       Node parent = n.getParent();
       Token type = parent.getToken();
       switch (type) {
@@ -707,6 +709,7 @@ public final class CodePrinter {
     private boolean outputTypes = false;
     private SourceMap sourceMap = null;
     private boolean tagAsExterns;
+    private boolean tagAsTypeSummary;
     private boolean tagAsStrict;
     private TypeIRegistry registry;
     private CodeGeneratorFactory codeGeneratorFactory = new CodeGeneratorFactory() {
@@ -779,6 +782,12 @@ public final class CodePrinter {
       return this;
     }
 
+    /** Set whether the output should be tagged as an .i.js file. */
+    public Builder setTagAsTypeSummary(boolean tagAsTypeSummary) {
+      this.tagAsTypeSummary = tagAsTypeSummary;
+      return this;
+    }
+
     /**
      * Set whether the output should be tagged as @externs code.
      */
@@ -816,8 +825,16 @@ public final class CodePrinter {
             "Cannot build without root node being specified");
       }
 
-      return toSource(root, Format.fromOptions(options, outputTypes, prettyPrint), options,
-          sourceMap, tagAsExterns, tagAsStrict, lineBreak, codeGeneratorFactory);
+      return toSource(
+          root,
+          Format.fromOptions(options, outputTypes, prettyPrint),
+          options,
+          sourceMap,
+          tagAsTypeSummary,
+          tagAsExterns,
+          tagAsStrict,
+          lineBreak,
+          codeGeneratorFactory);
     }
   }
 
@@ -840,13 +857,18 @@ public final class CodePrinter {
     }
   }
 
-  /**
-   * Converts a tree to JS code
-   */
-  private static String toSource(Node root, Format outputFormat, CompilerOptions options,
-      SourceMap sourceMap, boolean tagAsExterns, boolean tagAsStrict, boolean lineBreak,
+  /** Converts a tree to JS code */
+  private static String toSource(
+      Node root,
+      Format outputFormat,
+      CompilerOptions options,
+      SourceMap sourceMap,
+      boolean tagAsTypeSummary,
+      boolean tagAsExterns,
+      boolean tagAsStrict,
+      boolean lineBreak,
       CodeGeneratorFactory codeGeneratorFactory) {
-    Preconditions.checkState(options.sourceMapDetailLevel != null);
+    checkState(options.sourceMapDetailLevel != null);
 
     boolean createSourceMap = (sourceMap != null);
     MappedCodePrinter mcp =
@@ -865,6 +887,9 @@ public final class CodePrinter {
 
     if (tagAsExterns) {
       cg.tagAsExterns();
+    }
+    if (tagAsTypeSummary) {
+      cg.tagAsTypeSummary();
     }
     if (tagAsStrict) {
       cg.tagAsStrict();

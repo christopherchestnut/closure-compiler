@@ -16,8 +16,9 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
@@ -39,7 +40,7 @@ class MinimizeExitPoints extends AbstractPeepholeOptimization {
 
   @VisibleForTesting
   final CompilerPass asCompilerPass() {
-    return new PeepholeOptimizationsPass(compiler, this);
+    return new PeepholeOptimizationsPass(compiler, this.getClass().getSimpleName(), this);
   }
 
   @Override
@@ -52,6 +53,7 @@ class MinimizeExitPoints extends AbstractPeepholeOptimization {
 
       case FOR:
       case FOR_IN:
+      case FOR_OF:
       case WHILE:
         tryMinimizeExits(NodeUtil.getLoopCodeBlock(n), Token.CONTINUE, null);
         break;
@@ -139,7 +141,7 @@ class MinimizeExitPoints extends AbstractPeepholeOptimization {
       tryMinimizeExits(tryBlock, exitType, labelName);
       Node allCatchNodes = NodeUtil.getCatchBlock(n);
       if (NodeUtil.hasCatchHandler(allCatchNodes)) {
-        Preconditions.checkState(allCatchNodes.hasOneChild());
+        checkState(allCatchNodes.hasOneChild());
         Node catchNode = allCatchNodes.getFirstChild();
         Node catchCodeBlock = catchNode.getLastChild();
         tryMinimizeExits(catchCodeBlock, exitType, labelName);
@@ -210,7 +212,7 @@ class MinimizeExitPoints extends AbstractPeepholeOptimization {
   }
 
   void tryMinimizeSwitchExits(Node n, Token exitType, @Nullable String labelName) {
-    Preconditions.checkState(n.isSwitch());
+    checkState(n.isSwitch());
     // Skipping the switch condition, visit all the children.
     for (Node c = n.getSecondChild(); c != null; c = c.getNext()) {
       if (c != n.getLastChild()) {
@@ -227,9 +229,9 @@ class MinimizeExitPoints extends AbstractPeepholeOptimization {
    * after the switch.
    */
   void tryMinimizeSwitchCaseExits(Node n, Token exitType, @Nullable String labelName) {
-    Preconditions.checkState(NodeUtil.isSwitchCase(n));
+    checkState(NodeUtil.isSwitchCase(n));
 
-    Preconditions.checkState(n != n.getParent().getLastChild());
+    checkState(n != n.getParent().getLastChild());
     Node block = n.getLastChild();
     Node maybeBreak = block.getLastChild();
     if (maybeBreak == null || !maybeBreak.isBreak() || maybeBreak.hasChildren()) {

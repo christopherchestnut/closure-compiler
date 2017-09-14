@@ -23,6 +23,7 @@ public final class ConvertToTypedInterfaceTest extends CompilerTestCase {
   @Override
   protected void setUp() throws Exception {
     super.setUp();
+    allowExternsChanges();
     setAcceptedLanguage(LanguageMode.ECMASCRIPT_2017);
   }
 
@@ -37,8 +38,6 @@ public final class ConvertToTypedInterfaceTest extends CompilerTestCase {
   }
 
   public void testInferAnnotatedTypeFromTypeInference() {
-    enableTypeCheck();
-
     test("/** @const */ var x = 5;", "/** @const {number} */ var x;");
 
     test(
@@ -47,7 +46,7 @@ public final class ConvertToTypedInterfaceTest extends CompilerTestCase {
   }
 
   public void testExternsDefinitionsRespected() {
-    test("/** @type {number} */ var x;", "x = 7;", "", null, null);
+    test("/** @type {number} */ var x;", "x = 7;", "");
   }
 
   public void testSimpleConstJsdocPropagation() {
@@ -62,14 +61,29 @@ public final class ConvertToTypedInterfaceTest extends CompilerTestCase {
         "/** @constructor */ function Foo() { /** @const */ this.x = 5; }",
         "/** @constructor */ function Foo() {} \n /** @const {number} */ Foo.prototype.x;");
 
-    testWarning(
+    test(
         "/** @const */ var x = cond ? true : 5;",
         "/** @const {*} */ var x;",
-        ConvertToTypedInterface.CONSTANT_WITHOUT_EXPLICIT_TYPE);
+        warning(ConvertToTypedInterface.CONSTANT_WITHOUT_EXPLICIT_TYPE));
   }
 
   public void testConstKeywordJsdocPropagation() {
     test("const x = 5;", "/** @const {number} */ var x;");
+
+    test(
+        "const x = 5, y = 'str', z = /abc/;",
+        LINE_JOINER.join(
+            "/** @const {number} */ var x;",
+            "/** @const {string} */ var y;",
+            "/** @const {!RegExp} */ var z;"));
+  }
+
+  public void testSplitMultiDeclarations() {
+    test("var /** number */ x = 4, /** string */ y = 'str';",
+        "/** @type {number} */ var x; /** @type {string} */ var y;");
+
+    test("let /** number */ x = 4, /** string */ y = 'str';",
+    "/** @type {number} */ var x; /** @type {string} */ var y;");
   }
 
   public void testThisPropertiesInConstructors() {
@@ -78,17 +92,18 @@ public final class ConvertToTypedInterfaceTest extends CompilerTestCase {
         "/** @constructor */ function Foo() {} \n /** @const {number} */ Foo.prototype.x;");
 
     test(
-        "/** @constructor */ function Foo() { this.x; }",
+        "/** @constructor */ function Foo() { this.x = undefined; }",
         "/** @constructor */ function Foo() {} \n /** @const {*} */ Foo.prototype.x;");
 
     test(
         "/** @constructor */ function Foo() { /** @type {?number} */ this.x = null; this.x = 5; }",
         "/** @constructor */ function Foo() {} \n /** @type {?number} */ Foo.prototype.x;");
 
-    testWarning(
+
+    test(
         "/** @constructor */ function Foo() { /** @const */ this.x = cond ? true : 5; }",
-        "/** @constructor */ function Foo() {}  /** @const {*} */ Foo.prototype.x; ",
-        ConvertToTypedInterface.CONSTANT_WITHOUT_EXPLICIT_TYPE);
+        "/** @constructor */ function Foo() {}  /** @const {*} */ Foo.prototype.x;",
+        warning(ConvertToTypedInterface.CONSTANT_WITHOUT_EXPLICIT_TYPE));
   }
 
   public void testThisPropertiesInConstructorsAndPrototype() {
@@ -172,6 +187,15 @@ public final class ConvertToTypedInterfaceTest extends CompilerTestCase {
             "  constructor(x) {}",
             "}",
             "/** @const {number} */ Foo.prototype.x;"));
+  }
+
+  public void testLegacyGoogModule() {
+    testSame(
+        LINE_JOINER.join(
+            "goog.module('a.b.c');",
+            "goog.module.declareLegacyNamespace();",
+            "",
+            "exports = class {};"));
   }
 
   public void testConstructorAlias1() {
@@ -389,6 +413,55 @@ public final class ConvertToTypedInterfaceTest extends CompilerTestCase {
         "class Foo { method(/** string */ s) {} }");
   }
 
+  public void testRemoveEmptyMembers() {
+    test(
+        "class Foo { ;; method(/** string */ s) {};; }",
+        "class Foo { method(/** string */ s) {} }");
+  }
+
+  public void testEs6Modules() {
+    testSame("export default class {}");
+
+    testSame("import Foo from 'foo';");
+
+    testSame("export class Foo {}");
+
+    testSame("import {Foo} from 'foo';");
+
+    testSame(
+        LINE_JOINER.join(
+            "import {Baz} from 'baz';",
+            "",
+            "export /** @constructor */ function Foo() {}",
+            "/** @type {!Baz} */ Foo.prototype.baz"));
+
+    testSame(
+        LINE_JOINER.join(
+            "import {Bar, Baz} from 'a/b/c';",
+            "",
+            "class Foo extends Bar {",
+            "  /** @return {!Baz} */ getBaz() {}",
+            "}",
+            "",
+            "export {Foo};"));
+
+    test(
+        LINE_JOINER.join(
+            "export class Foo {",
+            "  /** @return {number} */ getTime() { return Date.now(); }",
+            "}",
+            "export default /** @return {number} */ () => 6",
+            "const BLAH = 'foobar';",
+            "export {BLAH};"),
+        LINE_JOINER.join(
+            "export class Foo {",
+            "  /** @return {number} */ getTime() {}",
+            "}",
+            "export default /** @return {number} */ () => {}",
+            "/** @const {string} */ var BLAH;",
+            "export {BLAH};"));
+  }
+
   public void testGoogModules() {
     testSame(
         LINE_JOINER.join(
@@ -476,6 +549,28 @@ public final class ConvertToTypedInterfaceTest extends CompilerTestCase {
   }
 
   public void testGoogModulesWithUndefinedExports() {
+    testWarning(
+        LINE_JOINER.join(
+            "goog.module('x.y.z');",
+            "",
+            "const Baz = goog.require('x.y.z.Baz');",
+            "const Foobar = goog.require('f.b.Foobar');",
+            "",
+            "exports = (new Baz).getFoobar();"),
+        ConvertToTypedInterface.CONSTANT_WITHOUT_EXPLICIT_TYPE);
+
+   testWarning(
+        LINE_JOINER.join(
+            "goog.module('x.y.z');",
+            "",
+            "const Baz = goog.require('x.y.z.Baz');",
+            "const Foobar = goog.require('f.b.Foobar');",
+            "",
+            "exports.foobar = (new Baz).getFoobar();"),
+       ConvertToTypedInterface.CONSTANT_WITHOUT_EXPLICIT_TYPE);
+  }
+
+  public void testGoogModulesWithAnnotatedUninferrableExports() {
     test(
         LINE_JOINER.join(
             "goog.module('x.y.z');",
@@ -582,7 +677,7 @@ public final class ConvertToTypedInterfaceTest extends CompilerTestCase {
   public void testTryCatch() {
     test(
         "try { /** @type {number} */ var n = foo(); } catch (e) { console.log(e); }",
-        "{ /** @type {number} */ var n; }");
+        "/** @type {number} */ var n;");
 
     test(
         LINE_JOINER.join(
@@ -592,7 +687,7 @@ public final class ConvertToTypedInterfaceTest extends CompilerTestCase {
             "} finally {",
             "  /** @type {number} */ var end = Date.now();",
             "}"),
-        "{ /** @type {number} */ var start; } {/** @type {number} */ var end; }");
+        "/** @type {number} */ var start; /** @type {number} */ var end;");
   }
 
   public void testTemplatedClass() {
@@ -713,55 +808,77 @@ public final class ConvertToTypedInterfaceTest extends CompilerTestCase {
          "/** @define {number} */ goog.define('goog.BLAH');");
   }
 
+  public void testNestedBlocks() {
+    test("{ const x = foobar(); }", "");
+
+    test("{ /** @const */ let x = foobar(); }", "");
+
+    test("{ /** @const */ let x = foobar(); x = foobaz(); }", "");
+
+    testWarning("{ /** @const */ var x = foobar(); }",
+        ConvertToTypedInterface.CONSTANT_WITHOUT_EXPLICIT_TYPE);
+  }
+
+  public void testGoogProvidedTopLevelSymbol() {
+    testSame("goog.provide('Foo');  /** @constructor */ Foo = function() {};");
+  }
+
   public void testIfs() {
     test(
         "if (true) { var /** number */ x = 5; }",
-        "{/** @type {number} */ var x;}");
+        "/** @type {number} */ var x;");
 
     test(
         "if (true) { var /** number */ x = 5; } else { var /** string */ y = 'str'; }",
-        "{/** @type {number} */ var x;} {/** @type {string} */ var  y; }");
+        "/** @type {number} */ var x; /** @type {string} */ var  y;");
 
     test(
         "if (true) { if (false) { var /** number */ x = 5; } }",
-        "{{/** @type {number} */ var x;}}");
+        "/** @type {number} */ var x;");
 
     test(
         "if (true) {} else { if (false) {} else { var /** number */ x = 5; } }",
-        "{}{{}{/** @type {number} */ var x;}}");
+        "/** @type {number} */ var x;");
   }
 
   public void testLoops() {
-    test("while (true) { foo(); break; }", "{}");
+    test("while (true) { foo(); break; }", "");
 
     test("for (var i = 0; i < 10; i++) { var field = 88; }",
-        "/** @const {*} */ var i; {/** @const {*} */ var field;}");
+        "/** @const {*} */ var i; /** @const {*} */ var field;");
+
+    test("for (var i = 0, arraySize = getSize(); i < arraySize; i++) { foo(arr[i]); }",
+        "/** @const {*} */ var i; /** @const {*} */ var arraySize;");
 
     test(
         "while (i++ < 10) { var /** number */ field = i; }",
-        "{ /** @type {number } */ var field; }");
+        "/** @type {number } */ var field;");
 
     test(
         "do { var /** number */ field = i; } while (i++ < 10);",
-        "{ /** @type {number } */ var field; }");
+        "/** @type {number } */ var field;");
 
     test(
         "for (var /** number */ i = 0; i < 10; i++) { var /** number */ field = i; }",
-        "/** @type {number} */ var i; { /** @type {number } */ var field; }");
+        "/** @type {number} */ var i; /** @type {number } */ var field;");
 
     test(
         "for (i = 0; i < 10; i++) { var /** number */ field = i; }",
-        "{ /** @type {number } */ var field; }");
+        "/** @type {number } */ var field;");
 
     test(
         "for (var i = 0; i < 10; i++) { var /** number */ field = i; }",
-        "/** @const {*} */ var i; { /** @type {number } */ var field; }");
+        "/** @const {*} */ var i; /** @type {number } */ var field;");
   }
 
   public void testNamespaces() {
     testSame("/** @const */ var ns = {}; /** @return {number} */ ns.fun = function(x,y,z) {}");
 
     testSame("/** @const */ var ns = {}; ns.fun = function(x,y,z) {}");
+
+    test(
+        "/** @const */ var ns = ns || {}; ns.fun = function(x,y,z) {}",
+        "/** @const */ var ns = {}; ns.fun = function(x,y,z) {}");
   }
 
   public void testRemoveIgnoredProperties() {
@@ -771,6 +888,10 @@ public final class ConvertToTypedInterfaceTest extends CompilerTestCase {
 
     test(
         "/** @constructor */ function Foo() {} Foo.prototype['fun'] = function(x,y,z) {}",
+        "/** @constructor */ function Foo() {}");
+
+    test(
+        "/** @constructor */ function Foo() {} /** @type {str} */ Foo['prototype'].method;",
         "/** @constructor */ function Foo() {}");
   }
 
@@ -921,5 +1042,38 @@ public final class ConvertToTypedInterfaceTest extends CompilerTestCase {
             "  }",
             "};"),
         ConvertToTypedInterface.CONSTANT_WITHOUT_EXPLICIT_TYPE);
+  }
+
+  public void testGoogScopeLeftoversAreRemoved() {
+    test(
+        LINE_JOINER.join(
+            "goog.provide('a.b.c.d.e.f.g');",
+            "",
+            "/** @const */ var $jscomp = $jscomp || {};",
+            "/** @const */ $jscomp.scope = {};",
+            "",
+            "$jscomp.scope.strayVariable = function() {};",
+            "",
+            "a.b.c.d.e.f.g.Foo = class {};"),
+        LINE_JOINER.join(
+            "goog.provide('a.b.c.d.e.f.g');",
+            "",
+            "a.b.c.d.e.f.g.Foo = class {};"));
+
+    test(
+        LINE_JOINER.join(
+            "goog.provide('a.b.c.d.e.f.g');",
+            "",
+            "/** @const */ var $jscomp = $jscomp || {};",
+            "/** @const */ $jscomp.scope = {};",
+            "",
+            "/** @constructor */",
+            "$jscomp.scope.strayCtor = function() { this.x = 5; };",
+            "",
+            "a.b.c.d.e.f.g.Foo = class {};"),
+        LINE_JOINER.join(
+            "goog.provide('a.b.c.d.e.f.g');",
+            "",
+            "a.b.c.d.e.f.g.Foo = class {};"));
   }
 }

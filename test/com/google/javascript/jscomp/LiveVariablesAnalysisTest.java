@@ -16,11 +16,13 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.base.Preconditions.checkState;
+import static com.google.common.truth.Truth.assertThat;
+
 import com.google.javascript.jscomp.DataFlowAnalysis.FlowState;
 import com.google.javascript.rhino.InputId;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.Token;
-
 import junit.framework.TestCase;
 
 /**
@@ -349,7 +351,7 @@ public final class LiveVariablesAnalysisTest extends TestCase {
 
   private static void assertNotEscaped(String src, String name) {
     for (Var var : computeLiveness(src).getEscapedLocals()) {
-      assertFalse(var.name.equals(name));
+      assertThat(var.name).isNotEqualTo(name);
     }
   }
 
@@ -360,16 +362,16 @@ public final class LiveVariablesAnalysisTest extends TestCase {
     compiler.initOptions(options);
     src = "function _FUNCTION(param1, param2){" + src + "}";
     Node n = compiler.parseTestCode(src).removeFirstChild();
+    checkState(n.isFunction(), n);
     Node script = new Node(Token.SCRIPT, n);
     script.setInputId(new InputId("test"));
-    assertEquals(0, compiler.getErrorCount());
-    Scope scope = SyntacticScopeCreator.makeUntyped(compiler)
-        .createScope(n, Scope.createGlobalScope(script));
+    assertThat(compiler.getErrors()).isEmpty();
+    ScopeCreator scopeCreator = SyntacticScopeCreator.makeUntyped(compiler);
+    Scope scope = scopeCreator.createScope(n, Scope.createGlobalScope(script));
     ControlFlowAnalysis cfa = new ControlFlowAnalysis(compiler, false, true);
     cfa.process(null, n);
     ControlFlowGraph<Node> cfg = cfa.getCfg();
-    LiveVariablesAnalysis analysis =
-        new LiveVariablesAnalysis(cfg, scope, compiler);
+    LiveVariablesAnalysis analysis = new LiveVariablesAnalysis(cfg, scope, compiler, scopeCreator);
     analysis.analyze();
     return analysis;
   }

@@ -16,7 +16,9 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.common.base.Preconditions;
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
+
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.JSDocInfo;
@@ -164,7 +166,7 @@ class AngularPass extends AbstractPostOrderCallback
    * @return STRING nodes.
    */
   private List<Node> createDependenciesList(Node n) {
-    Preconditions.checkArgument(n.isFunction());
+    checkArgument(n.isFunction());
     Node params = NodeUtil.getFunctionParameters(n);
     if (params != null) {
       return createStringsFromParamList(params);
@@ -220,11 +222,11 @@ class AngularPass extends AbstractPostOrderCallback
       // a = function() {}
       // a = b = c = function() {}
       case ASSIGN:
-        name = n.getFirstChild().getQualifiedName();
-        if (name == null) {
+        if (!n.getFirstChild().isQualifiedName()) {
           compiler.report(t.makeError(n, INJECTED_FUNCTION_ON_NON_QNAME));
           return;
         }
+        name = n.getFirstChild().getQualifiedName();
         // last node of chained assignment.
         fn = n;
         while (fn.isAssign()) {
@@ -291,14 +293,16 @@ class AngularPass extends AbstractPostOrderCallback
       return;
     }
     // report an error if the function declaration did not take place in a block or global scope
-    if (!target.getParent().isScript() && !target.getParent().isNormalBlock()) {
+    if (!target.getParent().isScript()
+        && !target.getParent().isNormalBlock()
+        && !target.getParent().isModuleBody()) {
       compiler.report(t.makeError(n, INJECT_IN_NON_GLOBAL_OR_BLOCK_ERROR));
       return;
     }
     // checks that name is present, which must always be the case unless the
     // compiler allowed a syntax error or a dangling anonymous function
     // expression.
-    Preconditions.checkNotNull(name);
+    checkNotNull(name);
     // registers the node.
     injectables.add(new NodeContext(name, n, fn, target));
   }
@@ -316,8 +320,8 @@ class AngularPass extends AbstractPostOrderCallback
    * chain, or null.
    */
   private static Node getDeclarationRValue(Node n) {
-    Preconditions.checkNotNull(n);
-    Preconditions.checkArgument(NodeUtil.isNameDeclaration(n));
+    checkNotNull(n);
+    checkArgument(NodeUtil.isNameDeclaration(n));
     n = n.getFirstFirstChild();
     if (n == null) {
       return null;

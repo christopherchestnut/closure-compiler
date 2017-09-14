@@ -27,16 +27,13 @@ public final class CreateSyntheticBlocksTest extends CompilerTestCase {
   private static final String START_MARKER = "startMarker";
   private static final String END_MARKER = "endMarker";
 
-  public CreateSyntheticBlocksTest() {
-    // Can't use compare as a tree because of the added synthetic blocks.
-    super("", false);
-  }
-
   @Override
-  public void setUp() throws Exception {
+  protected void setUp() throws Exception {
     super.setUp();
+    // Can't use compare as a tree because of the added synthetic blocks.
+    disableCompareAsTree();
     setAcceptedLanguage(LanguageMode.ECMASCRIPT_2017);
-    enableLineNumberCheck(false);
+    disableLineNumberCheck();
   }
 
   @Override
@@ -44,13 +41,14 @@ public final class CreateSyntheticBlocksTest extends CompilerTestCase {
     return new CompilerPass() {
       @Override
       public void process(Node externs, Node js) {
-        new CreateSyntheticBlocks(compiler, START_MARKER, END_MARKER).process(
-            externs, js);
+        new CreateSyntheticBlocks(compiler, START_MARKER, END_MARKER).process(externs, js);
         new MinimizeExitPoints(compiler).asCompilerPass().process(externs, js);
-        new PeepholeOptimizationsPass(compiler,
-            new PeepholeRemoveDeadCode(),
-            new PeepholeMinimizeConditions(true /* late */, false /* useTypes */),
-            new PeepholeFoldConstants(true, false))
+        new PeepholeOptimizationsPass(
+                compiler,
+                getName(),
+                new PeepholeRemoveDeadCode(),
+                new PeepholeMinimizeConditions(true /* late */, false /* useTypes */),
+                new PeepholeFoldConstants(true, false))
             .process(externs, js);
         new MinimizeExitPoints(compiler).asCompilerPass().process(externs, js);
         new Denormalize(compiler).process(externs, js);

@@ -16,6 +16,8 @@
 
 package com.google.debugging.sourcemap;
 
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
 import com.google.debugging.sourcemap.Base64VLQ.CharIterator;
@@ -159,9 +161,8 @@ public final class SourceMapConsumerV3 implements SourceMapConsumer,
       return null;
     }
 
-    Preconditions.checkState(lineNumber >= 0);
-    Preconditions.checkState(column >= 0);
-
+    checkState(lineNumber >= 0);
+    checkState(column >= 0);
 
     // If the line is empty return the previous mapping.
     if (lines.get(lineNumber) == null) {
@@ -170,7 +171,7 @@ public final class SourceMapConsumerV3 implements SourceMapConsumer,
 
     ArrayList<Entry> entries = lines.get(lineNumber);
     // No empty lists.
-    Preconditions.checkState(!entries.isEmpty());
+    checkState(!entries.isEmpty());
     if (entries.get(0).getGeneratedColumn() > column) {
       return getPreviousMapping(lineNumber);
     }
@@ -242,7 +243,7 @@ public final class SourceMapConsumerV3 implements SourceMapConsumer,
       this.content = new StringCharIterator(lineMap);
     }
 
-    void build() {
+    void build() throws SourceMapParseException {
       int [] temp = new int[MAX_ENTRY_VALUES];
       ArrayList<Entry> entries = new ArrayList<>();
       while (content.hasNext()) {
@@ -296,10 +297,8 @@ public final class SourceMapConsumerV3 implements SourceMapConsumer,
     private void validateEntry(Entry entry) {
       Preconditions.checkState((lineCount < 0) || (line < lineCount),
           "line=%s, lineCount=%s", line, lineCount);
-      Preconditions.checkState(entry.getSourceFileId() == UNMAPPED
-          || entry.getSourceFileId() < sources.length);
-      Preconditions.checkState(entry.getNameId() == UNMAPPED
-          || entry.getNameId() < names.length);
+      checkState(entry.getSourceFileId() == UNMAPPED || entry.getSourceFileId() < sources.length);
+      checkState(entry.getNameId() == UNMAPPED || entry.getNameId() < names.length);
     }
 
     /**
@@ -310,7 +309,7 @@ public final class SourceMapConsumerV3 implements SourceMapConsumer,
      * @param entryValues The number of entries in the array.
      * @return The entry object.
      */
-    private Entry decodeEntry(int[] vals, int entryValues) {
+    private Entry decodeEntry(int[] vals, int entryValues) throws SourceMapParseException {
       Entry entry;
       switch (entryValues) {
         // The first values, if present are in the following order:
@@ -364,7 +363,7 @@ public final class SourceMapConsumerV3 implements SourceMapConsumer,
           return entry;
 
         default:
-          throw new IllegalStateException(
+          throw new SourceMapParseException(
               "Unexpected number of values for entry:" + entryValues);
       }
     }

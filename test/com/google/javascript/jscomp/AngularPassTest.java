@@ -24,7 +24,8 @@ import com.google.javascript.jscomp.CompilerOptions.LanguageMode;
 public final class AngularPassTest extends CompilerTestCase {
 
   @Override
-  public void setUp() {
+  protected void setUp() throws Exception {
+    super.setUp();
     setAcceptedLanguage(LanguageMode.ECMASCRIPT_2017);
   }
 
@@ -492,6 +493,19 @@ public final class AngularPassTest extends CompilerTestCase {
             "/** @ngInject */",
             "function fn(a, b) {}",
             "/** @public */ fn['$inject'] = ['a', 'b'];"));
+  }
+
+  public void testInEsModule() {
+    String js = LINE_JOINER.join(
+        "import {Foo} from './foo';",
+        "",
+        "class Bar extends Foo { /** @ngInject */ constructor(x, y) {} }");
+    test(
+        js,
+        LINE_JOINER.join(
+            js,
+            "/** @public */",
+            "Bar['$inject'] = ['x', 'y'];"));
   }
 
   public void testInGoogScope() {

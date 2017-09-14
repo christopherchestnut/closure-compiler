@@ -16,6 +16,8 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.base.Strings.nullToEmpty;
 import static com.google.javascript.rhino.jstype.JSTypeNative.ARRAY_TYPE;
 import static com.google.javascript.rhino.jstype.JSTypeNative.BOOLEAN_TYPE;
@@ -28,10 +30,11 @@ import static com.google.javascript.rhino.jstype.JSTypeNative.STRING_TYPE;
 import static com.google.javascript.rhino.jstype.JSTypeNative.UNKNOWN_TYPE;
 import static com.google.javascript.rhino.jstype.JSTypeNative.VOID_TYPE;
 
-import com.google.common.base.Preconditions;
+import com.google.common.base.Joiner;
 import com.google.javascript.jscomp.parsing.parser.util.format.SimpleFormat;
 import com.google.javascript.rhino.JSDocInfo;
 import com.google.javascript.rhino.Node;
+import com.google.javascript.rhino.TypeI.Nullability;
 import com.google.javascript.rhino.jstype.FunctionType;
 import com.google.javascript.rhino.jstype.JSType;
 import com.google.javascript.rhino.jstype.JSType.SubtypingMode;
@@ -48,6 +51,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import javax.annotation.Nullable;
 
 /**
@@ -83,15 +88,16 @@ class TypeValidator implements Serializable {
       "found   : {1}\n" +
       "required: {2}";
 
+  private static final String FOUND_REQUIRED_MISSING =
+      "{0}\n"
+      + "found   : {1}\n"
+      + "required: {2}\n"
+      + "missing : [{3}]\n"
+      + "mismatch: [{4}]";
+
   static final DiagnosticType INVALID_CAST =
       DiagnosticType.warning("JSC_INVALID_CAST",
           "invalid cast - must be a subtype or supertype\n" +
-          "from: {0}\n" +
-          "to  : {1}");
-
-  static final DiagnosticType UNNECESSARY_CAST =
-      DiagnosticType.disabled("JSC_UNNECESSARY_CAST",
-          "unnecessary cast\n" +
           "from: {0}\n" +
           "to  : {1}");
 
@@ -381,7 +387,7 @@ class TypeValidator implements Serializable {
    */
   void expectIndexMatch(NodeTraversal t, Node n, JSType objType,
                         JSType indexType) {
-    Preconditions.checkState(n.isGetElem(), n);
+    checkState(n.isGetElem(), n);
     Node indexNode = n.getLastChild();
     if (objType.isStruct() && !isWellKnownSymbol(indexNode)) {
       report(JSError.make(indexNode,
@@ -614,7 +620,7 @@ class TypeValidator implements Serializable {
             n.getFirstChild().setJSType(varType);
           }
         } else {
-          Preconditions.checkState(parent.isFunction());
+          checkState(parent.isFunction());
           parent.setJSType(varType);
         }
       } else {
@@ -730,7 +736,7 @@ class TypeValidator implements Serializable {
    * the super classes on the inheritance chain are implemented.
    */
   void expectAbstractMethodsImplemented(Node n, FunctionType ctorType) {
-    Preconditions.checkArgument(ctorType.isConstructor());
+    checkArgument(ctorType.isConstructor());
 
     Map<String, ObjectType> abstractMethodSuperTypeMap = new LinkedHashMap<>();
     FunctionType currSuperCtor = ctorType.getSuperClassConstructor();
@@ -777,7 +783,7 @@ class TypeValidator implements Serializable {
   }
 
   /** Report a type mismatch */
-  private void mismatch(NodeTraversal t, Node n, String msg, JSType found, JSType required) {
+  private void mismatch(NodeTraversal unusedT, Node n, String msg, JSType found, JSType required) {
     mismatch(n, msg, found, required);
   }
 
@@ -787,26 +793,67 @@ class TypeValidator implements Serializable {
 
   private void mismatch(Node n, String msg, JSType found, JSType required) {
     if (!found.isSubtype(required, this.subtypingMode)) {
-      JSError err = JSError.make(
-          n, TYPE_MISMATCH_WARNING, formatFoundRequired(msg, found, required));
+      Set<String> missing = null;
+      Set<String> mismatch = null;
+      if (required.isStructuralType()) {
+        missing = new TreeSet<>();
+        mismatch = new TreeSet<>();
+        ObjectType requiredObject = required.toMaybeObjectType();
+        ObjectType foundObject = found.toMaybeObjectType();
+        if (requiredObject != null && foundObject != null) {
+          for (String property : requiredObject.getPropertyNames()) {
+            JSType propRequired = requiredObject.getPropertyType(property);
+            boolean hasProperty = foundObject.hasProperty(property);
+            if (!propRequired.isExplicitlyVoidable() || hasProperty) {
+              if (hasProperty) {
+                if (!foundObject.getPropertyType(property).isSubtype(propRequired, subtypingMode)) {
+                  mismatch.add(property);
+                }
+              } else {
+                missing.add(property);
+              }
+            }
+          }
+        }
+      }
+      JSError err =
+          JSError.make(
+              n,
+              TYPE_MISMATCH_WARNING,
+              formatFoundRequired(msg, found, required, missing, mismatch));
       TypeMismatch.registerMismatch(
           this.mismatches, this.implicitInterfaceUses, found, required, err);
       report(err);
     }
   }
 
-  /**
-   * Formats a found/required error message.
-   */
-  private static String formatFoundRequired(String description, JSType found,
-                                            JSType required) {
+  /** Formats a found/required error message. */
+  private static String formatFoundRequired(
+      String description,
+      JSType found,
+      JSType required,
+      Set<String> missing,
+      Set<String> mismatch) {
     String foundStr = found.toString();
     String requiredStr = required.toString();
     if (foundStr.equals(requiredStr)) {
-      foundStr = found.toAnnotationString();
-      requiredStr = required.toAnnotationString();
+      foundStr = found.toAnnotationString(Nullability.IMPLICIT);
+      requiredStr = required.toAnnotationString(Nullability.IMPLICIT);
     }
-    return MessageFormat.format(FOUND_REQUIRED, description, foundStr, requiredStr);
+    String missingStr = "";
+    String mismatchStr = "";
+    if (missing != null && !missing.isEmpty()) {
+      missingStr = Joiner.on(",").join(missing);
+    }
+    if (mismatch != null && !mismatch.isEmpty()) {
+      mismatchStr = Joiner.on(",").join(mismatch);
+    }
+     if (missingStr.length() > 0 || mismatchStr.length() > 0) {
+      return MessageFormat.format(
+          FOUND_REQUIRED_MISSING, description, foundStr, requiredStr, missingStr, mismatchStr);
+    } else {
+      return MessageFormat.format(FOUND_REQUIRED, description, foundStr, requiredStr);
+    }
   }
 
   /**

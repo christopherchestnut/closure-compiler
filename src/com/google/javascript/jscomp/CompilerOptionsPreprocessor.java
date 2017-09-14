@@ -48,14 +48,6 @@ final class CompilerOptionsPreprocessor {
           + "remove_unused_prototype_props to be turned on.");
     }
 
-    if (options.getLanguageOut().toFeatureSet().contains(FeatureSet.ES6)
-        && !options.skipNonTranspilationPasses
-        && !options.skipTranspilationAndCrash) {
-      throw new InvalidOptionsException(
-          "ES6 is only supported for transpilation to a lower ECMAScript"
-          + " version. Set --language_out to ES3, ES5, or ES5_STRICT.");
-    }
-
     if (!options.inlineFunctions
         && options.maxFunctionSizeAfterInlining
         != CompilerOptions.UNLIMITED_FUN_SIZE_AFTER_INLINING) {
@@ -66,10 +58,6 @@ final class CompilerOptionsPreprocessor {
 
     if (options.getNewTypeInference()) {
       options.checkGlobalThisLevel = CheckLevel.OFF;
-      if (options.checkEventfulObjectDisposalPolicy != CompilerOptions.DisposalCheckingPolicy.OFF) {
-        throw new InvalidOptionsException(
-            "check_eventful_object_disposal is not supported with the new type inference.");
-      }
     }
 
     if (options.dartPass) {

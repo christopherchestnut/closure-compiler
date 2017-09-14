@@ -23,9 +23,7 @@ import com.google.javascript.jscomp.CompilerPass;
 import com.google.javascript.jscomp.CompilerTestCase;
 import com.google.javascript.jscomp.DiagnosticGroups;
 
-/**
- * Test case for {@link CheckInterfaces}.
- */
+/** Test case for {@link CheckInterfaces}. */
 public final class CheckInterfacesTest extends CompilerTestCase {
   @Override
   protected CompilerPass getProcessor(Compiler compiler) {
@@ -39,17 +37,19 @@ public final class CheckInterfacesTest extends CompilerTestCase {
     return options;
   }
 
-  public void setUp() {
-    enableTypeCheck();
-  }
-
   public void testInterfaceArgs() throws Exception {
     testSame("/** @interface */ function A(x) {}",
         CheckInterfaces.INTERFACE_SHOULD_NOT_TAKE_ARGS);
 
-    testSame("var ns = {};\n"
-        + "/** @interface */\n"
-        + "ns.SomeInterface = function(x) {};",
+    testSame(
+        LINE_JOINER.join(
+            "var ns = {};\n", "/** @interface */\n", "ns.SomeInterface = function(x) {};"),
+        CheckInterfaces.INTERFACE_SHOULD_NOT_TAKE_ARGS);
+  }
+
+  public void testInterfaceArgs_withES6Modules() throws Exception {
+    testSame(
+        "export /** @interface */ function A(x) {}",
         CheckInterfaces.INTERFACE_SHOULD_NOT_TAKE_ARGS);
   }
 
@@ -57,9 +57,40 @@ public final class CheckInterfacesTest extends CompilerTestCase {
     testSame("/** @interface */ function A() { this.foo; }",
         CheckInterfaces.INTERFACE_FUNCTION_NOT_EMPTY);
 
-    testSame("var ns = {};\n"
-        + "/** @interface */\n"
-        + "ns.SomeInterface = function() { this.foo; };",
+    testSame(
+        LINE_JOINER.join(
+            "var ns = {};\n",
+            "/** @interface */\n",
+            "ns.SomeInterface = function() { this.foo; };"),
         CheckInterfaces.INTERFACE_FUNCTION_NOT_EMPTY);
+  }
+
+  public void testInterfaceNotEmpty_withES6Modules() {
+    testSame(
+        "export /** @interface */ function A() { this.foo; }",
+        CheckInterfaces.INTERFACE_FUNCTION_NOT_EMPTY);
+  }
+
+  public void testRecordWithFieldDeclarations() {
+    testSame(
+        LINE_JOINER.join(
+            "/** @record */",
+            "function R() {",
+            "  /** @type {string} */",
+            "  this.foo;",
+            "",
+            "  /** @type {number} */",
+            "  this.bar;",
+            "}"));
+  }
+
+  public void testRecordWithOtherContents() {
+    testSame(
+        LINE_JOINER.join(
+            "/** @record */",
+            "function R() {",
+            "  /** @type {string} */",
+            "  this.foo = '';",
+            "}"));
   }
 }

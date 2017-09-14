@@ -16,16 +16,13 @@
 
 package com.google.javascript.jscomp;
 
-import static com.google.javascript.jscomp.CheckRequiresForConstructors.EXTRA_REQUIRE_WARNING;
+import static com.google.javascript.jscomp.CheckMissingAndExtraRequires.EXTRA_REQUIRE_WARNING;
 
 import com.google.common.collect.ImmutableList;
-
 import com.google.javascript.jscomp.CompilerOptions.LanguageMode;
 import java.util.List;
 
-/**
- * Tests for the "extra requires" check in {@link CheckRequiresForConstructors}.
- */
+/** Tests for the "extra requires" check in {@link CheckMissingAndExtraRequires}. */
 public final class ExtraRequireTest extends CompilerTestCase {
   public ExtraRequireTest() {
     super();
@@ -45,8 +42,8 @@ public final class ExtraRequireTest extends CompilerTestCase {
 
   @Override
   protected CompilerPass getProcessor(Compiler compiler) {
-    return new CheckRequiresForConstructors(compiler,
-        CheckRequiresForConstructors.Mode.FULL_COMPILE);
+    return new CheckMissingAndExtraRequires(
+        compiler, CheckMissingAndExtraRequires.Mode.FULL_COMPILE);
   }
 
   public void testNoWarning() {
@@ -71,14 +68,14 @@ public final class ExtraRequireTest extends CompilerTestCase {
     String js = "goog.require('ns.Foo'); /** @type {ns.Foo} */ var f;";
     List<SourceFile> externs = ImmutableList.of(SourceFile.fromCode("externs",
         "/** @const */ var ns;"));
-    test(externs, js, js, null, null, null);
+    testSame(externs(externs), srcs(js));
   }
 
   public void testNoWarning_externsNew() {
     String js = "goog.require('ns.Foo'); new ns.Foo();";
     List<SourceFile> externs = ImmutableList.of(SourceFile.fromCode("externs",
         "/** @const */ var ns;"));
-    test(externs, js, js, null, null, null);
+    testSame(externs(externs), srcs(js));
   }
 
   public void testNoWarning_objlitShorthand() {
@@ -92,6 +89,15 @@ public final class ExtraRequireTest extends CompilerTestCase {
     testSame(
         LINE_JOINER.join(
             "goog.require('X');",
+            "alert({X});"));
+  }
+
+  public void testNoWarning_objlitShorthand_withES6Modules() {
+    testSame(
+        LINE_JOINER.join(
+            "import 'example.module';",
+            "",
+            "import X from 'example.X';",
             "alert({X});"));
   }
 
@@ -296,6 +302,19 @@ public final class ExtraRequireTest extends CompilerTestCase {
             "var {assert : googAssert} = goog.require('goog.asserts');",
             "",
             "exports = function() {",
+            "  assert(true);",
+            "};"),
+        EXTRA_REQUIRE_WARNING);
+  }
+
+  public void testES6ModuleWithDestructuringRequire() {
+    testError(
+        LINE_JOINER.join(
+            "import 'example';",
+            "",
+            "import {assert, fail} from 'goog.asserts';",
+            "",
+            "export default function() {",
             "  assert(true);",
             "};"),
         EXTRA_REQUIRE_WARNING);

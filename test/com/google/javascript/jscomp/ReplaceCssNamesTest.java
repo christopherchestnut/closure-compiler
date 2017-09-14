@@ -16,6 +16,7 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.truth.Truth.assertThat;
 import static com.google.javascript.jscomp.ReplaceCssNames.UNEXPECTED_STRING_LITERAL_ERROR;
 import static com.google.javascript.jscomp.ReplaceCssNames.UNKNOWN_SYMBOL_WARNING;
 
@@ -132,7 +133,7 @@ public final class ReplaceCssNamesTest extends TypeICompilerTestCase {
         .put("disabled", 1)
         .put("buttonbar", 1)
         .build();
-    assertEquals(expected, cssNames);
+    assertThat(cssNames).isEqualTo(expected);
   }
 
   public void testDoNotUseReplacementMapOti() {
@@ -146,12 +147,18 @@ public final class ReplaceCssNamesTest extends TypeICompilerTestCase {
   }
 
   public void testOneArgWithUnknownStringLiterals() {
-    test("var x = goog.getCssName('unknown')",
-         "var x = 'unknown'", null, UNKNOWN_SYMBOL_WARNING);
-    test("el.className = goog.getCssName('ooo')",
-         "el.className = 'ooo'", null, UNKNOWN_SYMBOL_WARNING);
-    test("setClass(goog.getCssName('ab'))",
-         "setClass('ab')", null, UNKNOWN_SYMBOL_WARNING);
+    test(
+        "var x = goog.getCssName('unknown')",
+        "var x = 'unknown'",
+        warning(UNKNOWN_SYMBOL_WARNING));
+    test(
+        "el.className = goog.getCssName('ooo')",
+        "el.className = 'ooo'",
+        warning(UNKNOWN_SYMBOL_WARNING));
+    test(
+        "setClass(goog.getCssName('ab'))",
+        "setClass('ab')",
+        warning(UNKNOWN_SYMBOL_WARNING));
   }
 
   private void oneArgWithSimpleStringLiterals() {
@@ -167,7 +174,7 @@ public final class ReplaceCssNamesTest extends TypeICompilerTestCase {
         .put("colorswatch", 1)
         .put("elephant", 1)
         .build();
-    assertEquals(expected, cssNames);
+    assertThat(cssNames).isEqualTo(expected);
   }
 
   public void testOneArgWithSimpleStringLiteralsOti() {
@@ -196,7 +203,7 @@ public final class ReplaceCssNamesTest extends TypeICompilerTestCase {
         .put("disabled", 1)
         .put("buttonbar", 1)
         .build();
-    assertEquals(expected, cssNames);
+    assertThat(cssNames).isEqualTo(expected);
   }
 
   public void testOneArgWithCompositeClassNamesOti() {
@@ -223,13 +230,18 @@ public final class ReplaceCssNamesTest extends TypeICompilerTestCase {
   }
 
   public void testOneArgWithCompositeClassNamesWithUnknownParts() {
-    test("var x = goog.getCssName('goog-header-active')",
-         "var x = 'goog-header-active'", null, UNKNOWN_SYMBOL_WARNING);
-    test("el.className = goog.getCssName('goog-colorswatch-focussed')",
-         "el.className = 'goog-colorswatch-focussed'",
-         null, UNKNOWN_SYMBOL_WARNING);
-    test("setClass(goog.getCssName('inactive-buttonbar'))",
-        "setClass('inactive-buttonbar')", null, UNKNOWN_SYMBOL_WARNING);
+    test(
+        "var x = goog.getCssName('goog-header-active')",
+        "var x = 'goog-header-active'",
+        warning(UNKNOWN_SYMBOL_WARNING));
+    test(
+        "el.className = goog.getCssName('goog-colorswatch-focussed')",
+        "el.className = 'goog-colorswatch-focussed'",
+        warning(UNKNOWN_SYMBOL_WARNING));
+    test(
+        "setClass(goog.getCssName('inactive-buttonbar'))",
+        "setClass('inactive-buttonbar')",
+        warning(UNKNOWN_SYMBOL_WARNING));
   }
 
   public void testTwoArgsWithStringLiterals() {

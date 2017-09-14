@@ -16,16 +16,14 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.common.base.Preconditions;
+import static com.google.common.base.Preconditions.checkNotNull;
+
 import com.google.common.collect.Iterables;
 import com.google.javascript.jscomp.graph.GraphvizGraph;
 import com.google.javascript.jscomp.graph.LinkedDirectedGraph;
 import com.google.javascript.rhino.Node;
-import java.io.Serializable;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 /**
  * Pass factories and meta-data for native Compiler passes.
@@ -82,7 +80,7 @@ public abstract class PassConfig {
    * @param scriptRoot The root of the AST used to generate global scope.
    */
   void patchGlobalTypedScope(AbstractCompiler compiler, Node scriptRoot) {
-    Preconditions.checkNotNull(internalScopeCreator);
+    checkNotNull(internalScopeCreator);
     internalScopeCreator.patchGlobalScope(topScope, scriptRoot);
   }
 
@@ -239,12 +237,6 @@ public abstract class PassConfig {
   }
 
   /**
-   * Get intermediate state for a running pass config, so it can
-   * be paused and started again later.
-   */
-  protected abstract State getIntermediateState();
-
-  /**
    * An implementation of PassConfig that just proxies all its method calls
    * into an inner class.
    */
@@ -280,40 +272,6 @@ public abstract class PassConfig {
 
     @Override TypedScope getTopScope() {
       return delegate.getTopScope();
-    }
-
-    @Override protected State getIntermediateState() {
-      return delegate.getIntermediateState();
-    }
-  }
-
-  /**
-   * Intermediate state for a running pass configuration.
-   */
-  public static class State implements Serializable {
-    private static final long serialVersionUID = 1L;
-
-    final Map<String, Integer> cssNames;
-    final VariableMap variableMap;
-    final VariableMap propertyMap;
-    final VariableMap anonymousFunctionNameMap;
-    final VariableMap stringMap;
-    final FunctionNames functionNames;
-    final String idGeneratorMap;
-
-    public State(Map<String, Integer> cssNames, Set<String> exportedNames,
-        CrossModuleMethodMotion.IdGenerator crossModuleIdGenerator,
-        VariableMap variableMap, VariableMap propertyMap,
-        VariableMap anonymousFunctionNameMap,
-        VariableMap stringMap, FunctionNames functionNames,
-        String idGeneratorMap) {
-      this.cssNames = cssNames;
-      this.variableMap = variableMap;
-      this.propertyMap = propertyMap;
-      this.anonymousFunctionNameMap = anonymousFunctionNameMap;
-      this.stringMap = stringMap;
-      this.idGeneratorMap = idGeneratorMap;
-      this.functionNames = functionNames;
     }
   }
 }

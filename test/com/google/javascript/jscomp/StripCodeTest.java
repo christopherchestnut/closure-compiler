@@ -28,7 +28,7 @@ public final class StripCodeTest extends CompilerTestCase {
   private static final String EXTERNS = "";
 
   public StripCodeTest() {
-    super(EXTERNS, true);
+    super(EXTERNS);
   }
 
   /**
@@ -125,6 +125,10 @@ public final class StripCodeTest extends CompilerTestCase {
     test("a.b.c = function() {};" +
          "a.b.c.logger = goog.debug.Logger.getLogger('a.b.c');",
          "a.b.c=function(){}");
+  }
+
+  public void testDeletedScopesAreReported() {
+    test("var nodeLogger = function () {};", "");
   }
 
   public void testLoggerDefinedInObjectLiteral1() {

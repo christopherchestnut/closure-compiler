@@ -15,7 +15,8 @@
  */
 package com.google.javascript.jscomp;
 
-import com.google.common.base.Preconditions;
+import static com.google.common.base.Preconditions.checkNotNull;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -35,7 +36,7 @@ final class Timeline<T> {
     T value;
 
     Event(T value) {
-      Preconditions.checkNotNull(value);
+      checkNotNull(value);
       this.value = value;
     }
   }
@@ -44,7 +45,7 @@ final class Timeline<T> {
     final String name;
 
     Time(String name) {
-      Preconditions.checkNotNull(name);
+      checkNotNull(name);
       this.name = name;
     }
 
@@ -96,6 +97,26 @@ final class Timeline<T> {
 
   void add(T value) {
     headEvent = addEvent(value, eventsByValue, headEvent);
+  }
+
+  void remove(T value) {
+    Event<T> event = eventsByValue.remove(value);
+
+    // If the event already exists somewhere else in the history then...
+    if (event != null) {
+      // make the rest of the list not reference it...
+      if (event.nextEvent != null) {
+        event.nextEvent.previousEvent = event.previousEvent;
+      } else {
+        // if it was the head element then back the head reference up one node.
+        headEvent = event.previousEvent;
+      }
+      event.previousEvent.nextEvent = event.nextEvent;
+
+      // make it not reference the rest of the list.
+      event.nextEvent = null;
+      event.previousEvent = null;
+    }
   }
 
   void mark(String timeName) {

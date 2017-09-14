@@ -28,7 +28,7 @@ import junit.framework.TestCase;
  * Test class for {@link GoogleCodingConvention}.
  */
 public final class ClosureCodingConventionTest extends TestCase {
-  private ClosureCodingConvention conv = new ClosureCodingConvention();
+  private final ClosureCodingConvention conv = new ClosureCodingConvention();
 
   public void testVarAndOptionalParams() {
     Node args = new Node(Token.PARAM_LIST,
@@ -169,6 +169,11 @@ public final class ClosureCodingConventionTest extends TestCase {
     assertNotObjectLiteralCast("goog.reflect.object(A);");
     assertNotObjectLiteralCast("goog.reflect.object(1, {});");
     assertObjectLiteralCast("goog.reflect.object(A, {});");
+
+    assertNotObjectLiteralCast("$jscomp.reflectObject();");
+    assertNotObjectLiteralCast("$jscomp.reflectObject(A);");
+    assertNotObjectLiteralCast("$jscomp.reflectObject(1, {});");
+    assertObjectLiteralCast("$jscomp.reflectObject(A, {});");
   }
 
   public void testFunctionBind() {

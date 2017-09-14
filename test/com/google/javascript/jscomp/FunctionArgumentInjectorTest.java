@@ -16,19 +16,19 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.truth.Truth.assertThat;
+import static com.google.javascript.jscomp.CompilerOptions.LanguageMode.ECMASCRIPT_2017;
 
-import com.google.common.base.Preconditions;
 import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableSet;
 import com.google.javascript.rhino.Node;
-
-import junit.framework.TestCase;
-
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import junit.framework.TestCase;
 
 /**
  * Inline function tests.
@@ -116,6 +116,12 @@ public final class FunctionArgumentInjectorTest extends TestCase {
             parseFunction(
                 "function f(a,b){ " +
                 "a; (function(){ (function () { b; }) }) }")));
+  }
+
+  public void testFindModifiedParameters12() {
+    assertThat(
+        FunctionArgumentInjector.findModifiedParameters(
+            parseFunction("function f(a=5){ return a;} f(1);"))).isEmpty();
   }
 
   public void testMaybeAddTempsForCallArguments1() {
@@ -437,8 +443,86 @@ public final class FunctionArgumentInjectorTest extends TestCase {
         ImmutableSet.of("a"));
   }
 
-  private void testNeededTemps(
-      String code, String fnName, Set<String> expectedTemps) {
+  public void testMaybeAddTempsForCallArgumentsDefault1() {
+    testNeededTemps("function foo(a = 5){return a;} foo(1);", "foo", EMPTY_STRING_SET);
+  }
+
+  public void testMaybeAddTempsForCallArgumentsDefault2() {
+    testNeededTemps("function foo(a = 5, b = 2){a; bar(); b;} foo(1, 2);", "foo", EMPTY_STRING_SET);
+  }
+
+  public void testMaybeAddTempsForCallArgumentsRestParam1() {
+    testNeededTemps("function foo(...args) {return args;} foo(1, 2);", "foo", EMPTY_STRING_SET);
+  }
+
+  public void testMaybeAddTempsForCallArgumentsRestParam2() {
+    testNeededTemps(
+        "function foo(x, ...args) {return args;} foo(1, 2);", "foo", ImmutableSet.of("args"));
+  }
+
+  public void testMaybeAddTempsForCallArgumentsRestObjectLit1() {
+    testNeededTemps(
+        "function foo(x, ...{length: length}) {return length;} foo(1, 1, 1);",
+        "foo",
+        ImmutableSet.of("length"));
+  }
+
+  public void testMaybeAddTempsForCallNewObject1() {
+    testNeededTemps(
+        "function foo({x:x}) {alert(x); alert(x);} foo(new Bar());",
+        "foo",
+        ImmutableSet.of("x"));
+  }
+
+  public void testMaybeAddTempsForCallNewObject2() {
+    testNeededTemps(
+        "function foo({x:x}) {alert(x);} foo(new Bar());",
+        "foo",
+        EMPTY_STRING_SET);
+  }
+
+  public void testMaybeAddTempsForCallNewObject3() {
+    testNeededTemps(
+        "function foo({x:x, y:y}, {z:z}) {alert(z);} foo(obj, new Bar());",
+        "foo",
+        ImmutableSet.of("z"));
+  }
+
+  public void testMaybeAddTempsForCallNewObject4() {
+    testNeededTemps(
+        "function foo({x:x, y:y}, {z:z}) {alert(z); return x+y;} foo(obj, new Bar());",
+        "foo",
+        ImmutableSet.of("x", "y", "z"));
+  }
+
+  public void testArgMapWithDefaultParam1() {
+    assertArgMapHasKeys(
+        "function foo(a = 5, b = 2){return a;} foo();", "foo", ImmutableSet.of("this", "a", "b"));
+  }
+
+  public void testArgMapWithDefaultParam2() {
+    assertArgMapHasKeys(
+        "function foo({x:x}={x:5},{y:y}={y:3}) {return x+y;} foo();", "foo",
+        ImmutableSet.of("this", "x", "y"));
+  }
+
+  public void testArgMapWithRestParam1() {
+    assertArgMapHasKeys(
+        "function foo(...args){return args;} foo(1, 2);", "foo", ImmutableSet.of("this", "args"));
+  }
+
+  private void assertArgMapHasKeys(String code, String fnName, Set<String> expectedKeys) {
+    Node n = parse(code);
+    Node fn = findFunction(n, fnName);
+    assertNotNull(fn);
+    Node call = findCall(n, fnName);
+    assertNotNull(call);
+    LinkedHashMap<String, Node> actualMap =
+        FunctionArgumentInjector.getFunctionCallParameterMap(fn, call, getNameSupplier());
+    assertThat(actualMap.keySet()).isEqualTo(expectedKeys);
+  }
+
+  private void testNeededTemps(String code, String fnName, Set<String> expectedTemps) {
     Node n = parse(code);
     Node fn = findFunction(n, fnName);
     assertNotNull(fn);
@@ -454,6 +538,7 @@ public final class FunctionArgumentInjectorTest extends TestCase {
 
     assertEquals(expectedTemps, actualTemps);
   }
+
 
   private static Supplier<String> getNameSupplier() {
     return new Supplier<String>() {
@@ -472,8 +557,7 @@ public final class FunctionArgumentInjectorTest extends TestCase {
         callee = n.getFirstFirstChild();
         Node prop = callee.getNext();
         // Only "call" is support at this point.
-        Preconditions.checkArgument(prop.isString() &&
-            prop.getString().equals("call"));
+        checkArgument(prop.isString() && prop.getString().equals("call"));
       } else {
         callee = n.getFirstChild();
       }
@@ -517,8 +601,13 @@ public final class FunctionArgumentInjectorTest extends TestCase {
 
   private static Node parse(String js) {
     Compiler compiler = new Compiler();
+    CompilerOptions options = new CompilerOptions();
+    options.setLanguageIn(ECMASCRIPT_2017);
+
+    compiler.initOptions(options);
     Node n = compiler.parseTestCode(js);
     assertEquals(0, compiler.getErrorCount());
     return n;
   }
 }
+

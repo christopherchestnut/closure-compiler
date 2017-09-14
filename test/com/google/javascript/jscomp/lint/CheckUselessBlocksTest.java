@@ -43,7 +43,8 @@ public final class CheckUselessBlocksTest extends CompilerTestCase {
   }
 
   @Override
-  public void setUp() {
+  protected void setUp() throws Exception {
+    super.setUp();
     setAcceptedLanguage(LanguageMode.ECMASCRIPT_2017);
   }
 
@@ -62,6 +63,10 @@ public final class CheckUselessBlocksTest extends CompilerTestCase {
     testSame("if (true) { let x = 1; }");
     testSame("{ const y = 1; }");
     testSame("{ class Foo {} }");
+  }
+
+  public void testCheckUselessBlocks_withES6Modules_noWarning() {
+    testSame("export function f() { switch (x) { case 1: { return 5; } } }");
   }
 
   public void testCheckUselessBlocks_warning() {
@@ -90,5 +95,9 @@ public final class CheckUselessBlocksTest extends CompilerTestCase {
     testWarning("{ let x = function() {}; {} }", USELESS_BLOCK);
     testWarning("{ let x = function() { {} }; }", USELESS_BLOCK);
     testWarning("{ var f = class {}; }", USELESS_BLOCK);
+  }
+
+  public void testCheckUselessBlocks_withES6Modules_warning() {
+    testWarning("export function bar() { { baz(); } }", USELESS_BLOCK);
   }
 }

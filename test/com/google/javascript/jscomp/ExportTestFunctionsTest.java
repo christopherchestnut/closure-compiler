@@ -39,9 +39,9 @@ public final class ExportTestFunctionsTest extends CompilerTestCase {
   }
 
   @Override
-  public void setUp() throws Exception {
+  protected void setUp() throws Exception {
     super.setUp();
-    super.enableLineNumberCheck(false);
+    disableLineNumberCheck();
     setAcceptedLanguage(LanguageMode.ECMASCRIPT_2017);
   }
 
@@ -122,6 +122,13 @@ public final class ExportTestFunctionsTest extends CompilerTestCase {
         "var testBar = function() { var testB = function() {}}",
         "var testBar = function(){ var testB = function() {}}; "
             + "google_exportSymbol('testBar',testBar)");
+  }
+
+  // https://github.com/google/closure-compiler/issues/2563
+  public void testFunctionExpressionsInAssignAreExported() {
+    test(
+        "testBar = function() {};",
+        "testBar = function() {}; google_exportSymbol('testBar',testBar)");
   }
 
   public void testFunctionExpressionsByLetAreExported() {
@@ -244,6 +251,40 @@ public final class ExportTestFunctionsTest extends CompilerTestCase {
             + "google_exportProperty(MyTest.prototype, 'tearDown', MyTest.prototype.tearDown);"
             + "google_exportProperty(MyTest.prototype, 'setUp', MyTest.prototype.setUp);"
             + "google_exportProperty(MyTest.prototype, 'testFoo', MyTest.prototype.testFoo);"
+            + "goog.testing.testSuite(new MyTest());");
+  }
+
+  // https://github.com/google/closure-compiler/issues/2563
+  public void testES6ClassAssignmentsAreExported() {
+    testSame("Foo = class {bar() {}}");
+
+    test(
+        "Foo = class {testBar() {}}",
+        "Foo = class {testBar() {}}; "
+            + "google_exportProperty(Foo.prototype, 'testBar', Foo.prototype.testBar);");
+  }
+
+  public void testEs6Class_testClassExpressionMethod() {
+    test(
+        "var MyTest=class{testFoo() {}}; goog.testing.testSuite(new MyTest());",
+        "var MyTest=class{testFoo() {}}; "
+            + "google_exportProperty(MyTest.prototype, 'testFoo', MyTest.prototype.testFoo); "
+            + "goog.testing.testSuite(new MyTest());");
+  }
+
+  public void testEs6Class_testClassExpressionByLetMethod() {
+    test(
+        "let MyTest=class{testFoo() {}}; goog.testing.testSuite(new MyTest());",
+        "let MyTest=class{testFoo() {}}; "
+            + "google_exportProperty(MyTest.prototype, 'testFoo', MyTest.prototype.testFoo); "
+            + "goog.testing.testSuite(new MyTest());");
+  }
+
+  public void testEs6Class_testClassExpressionByConstMethod() {
+    test(
+        "const MyTest=class{testFoo() {}}; goog.testing.testSuite(new MyTest());",
+        "const MyTest=class{testFoo() {}}; "
+            + "google_exportProperty(MyTest.prototype, 'testFoo', MyTest.prototype.testFoo); "
             + "goog.testing.testSuite(new MyTest());");
   }
 }

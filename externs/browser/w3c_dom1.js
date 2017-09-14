@@ -449,6 +449,16 @@ NodeList.prototype.length;
 NodeList.prototype.item = function(index) {};
 
 /**
+ * @param {?function(this:S, T, number, !NodeList<T>): ?} callback
+ * @param {S=} opt_thisobj
+ * @this {NodeList<T>}
+ * @template T,S
+ * @return {undefined}
+ * @see https://developer.mozilla.org/en-US/docs/Web/API/NodeList/forEach
+ */
+NodeList.prototype.forEach = function(callback, opt_thisobj) {};
+
+/**
  * @constructor
  * @implements {IObject<(string|number), T>}
  * @implements {IArrayLike<T>}
@@ -713,9 +723,10 @@ Element.prototype.setAttributeNode = function(newAttr) {};
 /**
  * @constructor
  * @extends {CharacterData}
+ * @param {string=} contents Optional textual content.
  * @see http://www.w3.org/TR/1998/REC-DOM-Level-1-19981001/level-one-core.html#ID-1312295772
  */
-function Text() {}
+function Text(contents) {}
 
 /**
  * @param {number} offset

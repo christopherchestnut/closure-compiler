@@ -16,6 +16,9 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.common.annotations.GwtIncompatible;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
@@ -28,6 +31,8 @@ import com.google.common.reflect.TypeToken;
 import com.google.javascript.jscomp.CheckConformance.InvalidRequirementSpec;
 import com.google.javascript.jscomp.CheckConformance.Rule;
 import com.google.javascript.jscomp.CodingConvention.AssertionFunctionSpec;
+import com.google.javascript.jscomp.ConformanceRules.AbstractRule;
+import com.google.javascript.jscomp.ConformanceRules.ConformanceResult;
 import com.google.javascript.jscomp.Requirement.Type;
 import com.google.javascript.jscomp.parsing.JsDocInfoParser;
 import com.google.javascript.rhino.FunctionTypeI;
@@ -325,9 +330,10 @@ public final class ConformanceRules {
     }
 
     protected boolean isUsed(Node n) {
-      return (NodeUtil.isAssignmentOp(n.getParent()))
-           ? NodeUtil.isExpressionResultUsed(n.getParent())
-           : NodeUtil.isExpressionResultUsed(n);
+      return !n.getParent().isName()
+          && ((NodeUtil.isAssignmentOp(n.getParent()))
+              ? NodeUtil.isExpressionResultUsed(n.getParent())
+              : NodeUtil.isExpressionResultUsed(n));
     }
   }
 
@@ -472,7 +478,7 @@ public final class ConformanceRules {
         throw new InvalidRequirementSpec("missing value");
       }
 
-      Preconditions.checkArgument(
+      checkArgument(
           requirement.getType() == Type.BANNED_PROPERTY
               || requirement.getType() == Type.BANNED_PROPERTY_READ
               || requirement.getType() == Type.BANNED_PROPERTY_WRITE
@@ -603,7 +609,7 @@ public final class ConformanceRules {
      */
     private static String getPropertyFromDeclarationName(String specName) {
       String[] parts = specName.split("\\.prototype\\.");
-      Preconditions.checkState(parts.length == 1 || parts.length == 2);
+      checkState(parts.length == 1 || parts.length == 2);
       if (parts.length == 2) {
         return parts[1];
       }
@@ -615,7 +621,7 @@ public final class ConformanceRules {
      */
     private static String getClassFromDeclarationName(String specName) {
       String[] parts = specName.split("\\.prototype\\.");
-      Preconditions.checkState(parts.length == 1 || parts.length == 2);
+      checkState(parts.length == 1 || parts.length == 2);
       if (parts.length == 2) {
         return parts[0];
       }
@@ -652,7 +658,7 @@ public final class ConformanceRules {
         Node callOrNew,
         FunctionTypeI functionType,
         boolean isCallInvocation) {
-      Preconditions.checkState(callOrNew.isCall() || callOrNew.isNew());
+      checkState(callOrNew.isCall() || callOrNew.isNew());
 
       return validateParameterList(compiler, callOrNew, functionType, isCallInvocation)
           && validateThis(callOrNew, functionType, isCallInvocation);
@@ -896,7 +902,7 @@ public final class ConformanceRules {
     private static String getPropertyFromDeclarationName(String specName)
         throws InvalidRequirementSpec {
       String[] parts = removeTypeDecl(specName).split("\\.prototype\\.");
-      Preconditions.checkState(parts.length == 1 || parts.length == 2);
+      checkState(parts.length == 1 || parts.length == 2);
       if (parts.length == 2) {
         return parts[1];
       }
@@ -910,7 +916,7 @@ public final class ConformanceRules {
         throws InvalidRequirementSpec {
       String tmp = removeTypeDecl(specName);
       String[] parts = tmp.split("\\.prototype\\.");
-      Preconditions.checkState(parts.length == 1 || parts.length == 2);
+      checkState(parts.length == 1 || parts.length == 2);
       if (parts.length == 2) {
         return parts[0];
       }
@@ -1185,7 +1191,8 @@ public final class ConformanceRules {
     // Whether the type is known to be invalid to dereference.
     private boolean invalidDeref(Node n) {
       TypeI type = n.getTypeI();
-      return type.isNullable() || type.isVoidable();
+      // TODO(johnlenz): top type should not be allowed here
+      return !type.isTop() && (type.isNullable() || type.isVoidable());
     }
   }
 
@@ -1385,7 +1392,7 @@ public final class ConformanceRules {
     @Override
     protected ConformanceResult checkConformance(NodeTraversal t, Node n) {
       if (t.inGlobalScope()
-          && isDeclaration(n)
+          && NodeUtil.isDeclaration(n)
           && !n.getBooleanProp(Node.IS_NAMESPACE)
           && !isWhitelisted(n)) {
         Node enclosingScript = NodeUtil.getEnclosingScript(n);
@@ -1395,12 +1402,6 @@ public final class ConformanceRules {
         return ConformanceResult.VIOLATION;
       }
       return ConformanceResult.CONFORMANCE;
-    }
-
-    private boolean isDeclaration(Node n) {
-      return NodeUtil.isNameDeclaration(n)
-          || NodeUtil.isFunctionDeclaration(n)
-          || NodeUtil.isClassDeclaration(n);
     }
 
     private boolean isWhitelisted(Node n) {
@@ -1641,22 +1642,28 @@ public final class ConformanceRules {
             .build();
 
     private boolean isCreateDomCall(Node n) {
-      if (NodeUtil.isCallTo(n, "goog.dom.createDom")) {
-        return true;
-      }
       if (!n.isCall()) {
         return false;
       }
-      Node function = n.getFirstChild();
-      if (!function.isGetProp()) {
+      Node target = n.getFirstChild();
+      if (!target.isGetProp()) {
         return false;
       }
-      TypeI type = function.getFirstChild().getTypeI();
+      if (!"createDom".equals(target.getLastChild().getString())) {
+        return false;
+      }
+
+      Node srcObj = target.getFirstChild();
+      if (srcObj.matchesQualifiedName("goog.dom")) {
+        return true;
+      }
+      TypeI type = srcObj.getTypeI();
       if (type == null) {
         return false;
       }
-      if ("goog.dom.DomHelper".equals(type.getDisplayName()) && function.getLastChild().isString()
-          && "createDom".equals(function.getLastChild().getString())) {
+      // TODO(johnlenz): This is really slow instead use the type registry to lookup the
+      // type and use isEquivalentTo
+      if ("goog.dom.DomHelper".equals(type.getDisplayName())) {
         return true;
       }
       return false;

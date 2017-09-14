@@ -15,7 +15,8 @@
  */
 package com.google.javascript.jscomp;
 
-import com.google.common.base.Preconditions;
+import static com.google.common.base.Preconditions.checkArgument;
+
 import com.google.common.collect.ImmutableList;
 import com.google.javascript.jscomp.Es6RewriteClass.ClassDeclarationMetadata;
 import com.google.javascript.rhino.IR;
@@ -417,9 +418,13 @@ public final class Es6TypedToEs6Converter implements NodeTraversal.Callback, Hot
     if (!name.isEmpty() && overloadStack.peek().containsKey(name)) {
       compiler.report(JSError.make(n, OVERLOAD_NOT_SUPPORTED));
       if (isMemberFunctionDef) {
+        t.reportCodeChange(parent.getParent());
         parent.detach();
+        NodeUtil.markFunctionsDeleted(parent, compiler);
       } else {
+        t.reportCodeChange(parent);
         n.detach();
+        NodeUtil.markFunctionsDeleted(n, compiler);
       }
       if (!processedOverloads.contains(overloadStack)) {
         Node original = overloadStack.peek().get(name);
@@ -434,7 +439,6 @@ public final class Es6TypedToEs6Converter implements NodeTraversal.Callback, Hot
             convertWithLocation(TypeDeclarationsIR.namedType("Function")), n.getSourceFileName()));
         originalJsDocNode.setJSDocInfo(builder.build());
       }
-      t.reportCodeChange();
       return;
     }
     overloadStack.peek().put(name, n);
@@ -648,7 +652,7 @@ public final class Es6TypedToEs6Converter implements NodeTraversal.Callback, Hot
   }
 
   private Node convertDeclaredTypeToJSDoc(Node type) {
-    Preconditions.checkArgument(type instanceof TypeDeclarationNode);
+    checkArgument(type instanceof TypeDeclarationNode);
     switch (type.getToken()) {
       // "Primitive" types.
       case STRING_TYPE:
@@ -825,6 +829,7 @@ public final class Es6TypedToEs6Converter implements NodeTraversal.Callback, Hot
 
     memberVariable.putBooleanProp(Node.OPT_ES6_TYPED, function.isOptionalEs6Typed());
     member.replaceWith(memberVariable);
+    NodeUtil.markFunctionsDeleted(member, compiler);
     return memberVariable;
   }
 

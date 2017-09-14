@@ -16,6 +16,9 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
 import static java.nio.charset.StandardCharsets.US_ASCII;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
@@ -23,7 +26,6 @@ import com.google.common.annotations.GwtIncompatible;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Function;
 import com.google.common.base.Joiner;
-import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableList;
@@ -189,9 +191,9 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
 
   AbstractCommandLineRunner(InputStream in, PrintStream out, PrintStream err) {
     this.config = new CommandLineConfig();
-    this.in = Preconditions.checkNotNull(in);
-    this.defaultJsOutput = Preconditions.checkNotNull(out);
-    this.err = Preconditions.checkNotNull(err);
+    this.in = checkNotNull(in);
+    this.defaultJsOutput = checkNotNull(out);
+    this.err = checkNotNull(err);
     this.gson = new Gson();
   }
 
@@ -211,8 +213,7 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
       Supplier<List<SourceFile>> inputsSupplier,
       Supplier<List<JSModule>> modulesSupplier,
       Function<Integer, Void> exitCodeReceiver) {
-    Preconditions.checkArgument(
-        inputsSupplier == null ^ modulesSupplier == null);
+    checkArgument(inputsSupplier == null ^ modulesSupplier == null);
     testMode = true;
     this.externsSupplierForTesting = externsSupplier;
     this.inputsSupplierForTesting = inputsSupplier;
@@ -225,7 +226,7 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
    *    problem during execution or 0i to indicate success.
    */
   public void setExitCodeReceiver(Function<Integer, Void> newExitCodeReceiver) {
-    this.exitCodeReceiver = Preconditions.checkNotNull(newExitCodeReceiver);
+    this.exitCodeReceiver = checkNotNull(newExitCodeReceiver);
   }
 
   /**
@@ -457,7 +458,7 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
       // In some environments, the externs.zip is relative to this class.
       input = AbstractCommandLineRunner.class.getResourceAsStream("externs.zip");
     }
-    Preconditions.checkNotNull(input);
+    checkNotNull(input);
 
     ZipInputStream zip = new ZipInputStream(input);
     String envPrefix = env.toString().toLowerCase() + "/";
@@ -494,12 +495,9 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
    * compiler.
    */
   public final void run() {
-    int result = 0;
-    int runs = 1;
+    int result;
     try {
-      for (int i = 0; i < runs && result == 0; i++) {
-        result = doRun();
-      }
+      result = doRun();
     } catch (AbstractCommandLineRunner.FlagUsageException e) {
       err.println(e.getMessage());
       result = -1;
@@ -665,7 +663,7 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
             String rootFilename = rootRelativePathsMap.get(filename);
             for (SourceFile zipEntry : newFiles) {
               String zipEntryName = zipEntry.getName();
-              Preconditions.checkState(zipEntryName.contains(filename));
+              checkState(zipEntryName.contains(filename));
               String zipmap = zipEntryName.replace(filename, rootFilename);
               rootRelativePathsMap.put(zipEntryName, zipmap);
             }
@@ -778,9 +776,9 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
       return modulesSupplierForTesting.get();
     }
 
-    Preconditions.checkState(specs != null);
-    Preconditions.checkState(!specs.isEmpty());
-    Preconditions.checkState(inputs != null);
+    checkState(specs != null);
+    checkState(!specs.isEmpty());
+    checkState(inputs != null);
 
     List<String> moduleNames = new ArrayList<>(specs.size());
     Map<String, JSModule> modulesByName = new LinkedHashMap<>();
@@ -884,7 +882,7 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
    *         will have the empty string as their value in this map.
    */
   static Map<String, String> parseModuleWrappers(List<String> specs, List<JSModule> modules) {
-    Preconditions.checkState(specs != null);
+    checkState(specs != null);
 
     Map<String, String> wrappers = Maps.newHashMapWithExpectedSize(modules.size());
 
@@ -950,7 +948,7 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
       out.append("// No JS output because the compiler was run in checks-only mode.\n");
       return;
     }
-    Preconditions.checkState(compiler.getOptions().outputJs == OutputJs.NORMAL);
+    checkState(compiler.getOptions().outputJs == OutputJs.NORMAL);
 
     String code = module == null ? compiler.toSource() : compiler.toSource(module);
     writeOutput(out, compiler, code, wrapper, codePlaceholder, escaper);
@@ -1183,7 +1181,7 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
           compiler.stage2Passes();
       }
       compiler.performPostCompilationTasks();
-    } catch (IOException e) {
+    } catch (IOException | ClassNotFoundException e) {
       compiler.report(JSError.make(COULD_NOT_DESERIALIZE_AST, filename));
     } finally {
       // Make sure we generate a report of errors and warnings even if the compiler throws an
@@ -1783,8 +1781,16 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
    * Outputs the string map generated by the {@link ReplaceStrings} pass if an output path exists.
    */
   private void outputStringMap() throws IOException {
-    if (!config.stringMapOutputPath.isEmpty() && compiler.getStringMap() != null) {
-      compiler.getStringMap().save(config.stringMapOutputPath);
+    if (!config.stringMapOutputPath.isEmpty()) {
+      if (compiler.getStringMap() == null) {
+        // Ensure an empty file is created if there is no string map.
+        // This avoids confusing some build tools that expect to see the file, even if it is empty.
+        if (!(new File(config.stringMapOutputPath).createNewFile())) {
+          throw new IOException("Could not create file: " + config.stringMapOutputPath);
+        }
+      } else {
+        compiler.getStringMap().save(config.stringMapOutputPath);
+      }
     }
   }
 
@@ -2018,7 +2024,7 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
       // make all the other cases simpler.
       if (input.getName().equals(
               Compiler.createFillFileName(Compiler.SINGLETON_MODULE_NAME))) {
-        Preconditions.checkState(1 == Iterables.size(inputs));
+        checkState(1 == Iterables.size(inputs));
         return;
       }
 
@@ -2044,10 +2050,10 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
     Map<String, String> rootRelativePathsMap = new LinkedHashMap<>();
     for (String mapString : config.manifestMaps) {
       int colonIndex = mapString.indexOf(':');
-      Preconditions.checkState(colonIndex > 0);
+      checkState(colonIndex > 0);
       String execPath = mapString.substring(0, colonIndex);
       String rootRelativePath = mapString.substring(colonIndex + 1);
-      Preconditions.checkState(rootRelativePath.indexOf(':') == -1);
+      checkState(rootRelativePath.indexOf(':') == -1);
       rootRelativePathsMap.put(execPath, rootRelativePath);
     }
     return rootRelativePathsMap;
@@ -2220,8 +2226,7 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
 
     private boolean parseInlineSourceMaps = false;
 
-    public CommandLineConfig setParseInlineSourceMaps(
-        boolean parseInlineSourceMaps) {
+    public CommandLineConfig setParseInlineSourceMaps(boolean parseInlineSourceMaps) {
       this.parseInlineSourceMaps = parseInlineSourceMaps;
       return this;
     }
@@ -2494,7 +2499,7 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
      * those files and sort them in dependency order.
      */
     public CommandLineConfig setEntryPoints(List<ModuleIdentifier> entryPoints) {
-      Preconditions.checkNotNull(entryPoints);
+      checkNotNull(entryPoints);
       this.entryPoints = entryPoints;
       return this;
     }
@@ -2855,7 +2860,7 @@ public abstract class AbstractCommandLineRunner<A extends Compiler,
 
     @Override
     public Void apply(Integer exitCode) {
-      int exitCodeValue = Preconditions.checkNotNull(exitCode);
+      int exitCodeValue = checkNotNull(exitCode);
       // Don't spuriously report success.
       // Posix conventions only guarantee that 8b are significant.
       byte exitCodeByte = (byte) exitCodeValue;

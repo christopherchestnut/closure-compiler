@@ -16,8 +16,10 @@
 
 package com.google.javascript.jscomp.newtypes;
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -50,13 +52,12 @@ public final class FunctionTypeBuilder {
   private JSType nominalType;
   // Only used to build DeclaredFunctionType for prototype methods
   private JSType receiverType;
-  // Non-empty iff this function has an @template annotation
-  private ImmutableList<String> typeParameters = ImmutableList.of();
+  private TypeParameters typeParameters = TypeParameters.EMPTY;
 
   private final JSTypes commonTypes;
 
   public FunctionTypeBuilder(JSTypes commonTypes) {
-    this.commonTypes = Preconditions.checkNotNull(commonTypes);
+    this.commonTypes = checkNotNull(commonTypes);
   }
 
   /**
@@ -82,6 +83,15 @@ public final class FunctionTypeBuilder {
     return this;
   }
 
+  public FunctionTypeBuilder addReqFormalToFront(JSType t) {
+    if (!optionalFormals.isEmpty() || restFormals != null) {
+      throw new WrongParameterOrderException(
+          "Cannot add required formal after optional or rest args");
+    }
+    requiredFormals.add(0, t);
+    return this;
+  }
+
   public FunctionTypeBuilder addOptFormal(JSType t) {
     if (restFormals != null) {
       throw new WrongParameterOrderException(
@@ -90,7 +100,7 @@ public final class FunctionTypeBuilder {
     if (t == null) {
       optionalFormals.add(null);
     } else {
-      Preconditions.checkArgument(!t.isBottom());
+      checkArgument(!t.isBottom());
       optionalFormals.add(JSType.join(t, this.commonTypes.UNDEFINED));
     }
     return this;
@@ -102,13 +112,13 @@ public final class FunctionTypeBuilder {
   }
 
   public FunctionTypeBuilder addRestFormals(JSType t) {
-    Preconditions.checkState(restFormals == null);
+    checkState(restFormals == null);
     restFormals = t;
     return this;
   }
 
   public FunctionTypeBuilder addRetType(JSType t) {
-    Preconditions.checkState(returnType == null);
+    checkState(returnType == null);
     returnType = t;
     return this;
   }
@@ -124,24 +134,28 @@ public final class FunctionTypeBuilder {
   }
 
   public FunctionTypeBuilder addNominalType(JSType t) {
-    Preconditions.checkState(this.nominalType == null);
+    checkState(this.nominalType == null);
     this.nominalType = t;
     return this;
   }
 
-  public FunctionTypeBuilder addTypeParameters(ImmutableList<String> typeParameters) {
-    Preconditions.checkNotNull(typeParameters);
-    Preconditions.checkState(this.typeParameters.isEmpty());
+  public FunctionTypeBuilder addTypeParameters(TypeParameters typeParameters) {
+    checkNotNull(typeParameters);
+    checkState(this.typeParameters.isEmpty());
     this.typeParameters = typeParameters;
     return this;
   }
 
-  public FunctionTypeBuilder appendTypeParameters(ImmutableList<String> typeParameters) {
-    Preconditions.checkNotNull(typeParameters);
-    ImmutableList.Builder<String> newTypeParams = ImmutableList.builder();
-    newTypeParams.addAll(this.typeParameters);
-    newTypeParams.addAll(typeParameters);
-    this.typeParameters = newTypeParams.build();
+  /**
+   * This method is used to handle functions with .call. For simplicity, if a TTL function
+   * is used with .call, the TTL variables will be treated as unknown.
+   */
+  public FunctionTypeBuilder appendTypeParameters(TypeParameters typeParameters) {
+    checkNotNull(typeParameters);
+    ArrayList<String> newTypeParams = new ArrayList<>();
+    newTypeParams.addAll(this.typeParameters.asList());
+    newTypeParams.addAll(typeParameters.asList());
+    this.typeParameters = TypeParameters.make(newTypeParams);
     return this;
   }
 
@@ -153,8 +167,8 @@ public final class FunctionTypeBuilder {
   }
 
   public DeclaredFunctionType buildDeclaration() {
-    Preconditions.checkState(!loose);
-    Preconditions.checkState(outerVars.isEmpty());
+    checkState(!loose);
+    checkState(outerVars.isEmpty());
     return DeclaredFunctionType.make(
         this.commonTypes,
         requiredFormals, optionalFormals, restFormals, returnType,

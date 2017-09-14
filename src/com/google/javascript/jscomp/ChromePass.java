@@ -17,6 +17,7 @@ package com.google.javascript.jscomp;
 
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
 import com.google.javascript.rhino.IR;
+import com.google.javascript.rhino.JSDocInfo;
 import com.google.javascript.rhino.JSDocInfoBuilder;
 import com.google.javascript.rhino.JSTypeExpression;
 import com.google.javascript.rhino.Node;
@@ -28,6 +29,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
+import javax.annotation.Nullable;
 
 /**
  * Compiler pass for Chrome-specific needs. It handles the following Chrome JS features:
@@ -142,8 +145,25 @@ public class ChromePass extends AbstractPostOrderCallback implements CompilerPas
     Node getPropNode =
         NodeUtil.newQName(compiler, target + "." + property.getString()).srcrefTree(call);
 
-    if (callee.matchesQualifiedName(CR_DEFINE_PROPERTY)) {
-      setJsDocWithType(getPropNode, getTypeByCrPropertyKind(call.getChildAtIndex(3)));
+    boolean isCrDefinePropertyCall = callee.matchesQualifiedName(CR_DEFINE_PROPERTY);
+    if (isCrDefinePropertyCall) {
+      // The 3rd argument (PropertyKind) is actually used at runtime, so it takes precedence.
+      Node propertyType = getTypeByCrPropertyKind(call.getChildAtIndex(3));
+      if (propertyType != null) {
+        setJsDocWithType(getPropNode, propertyType);
+      } else {
+        // Otherwise, if there's a @type above the cr.defineProperty() call, move it to the getter.
+        JSDocInfo sourceJsDocInfo = call.getJSDocInfo();
+        if (sourceJsDocInfo != null && sourceJsDocInfo.hasType()) {
+          getPropNode.setJSDocInfo(sourceJsDocInfo);
+        } else {
+          // Else, just give it a @type {?}.
+          setJsDocWithType(getPropNode, new Node(Token.QMARK));
+        }
+      }
+      // Nuke the JsDoc info above cr.defineProperty() calls so that the CheckJSDocInfo pass won't
+      // report any warnings.
+      call.setJSDocInfo(null);
     } else {
       setJsDocWithType(getPropNode, new Node(Token.QMARK));
     }
@@ -151,12 +171,14 @@ public class ChromePass extends AbstractPostOrderCallback implements CompilerPas
     Node definitionNode = IR.exprResult(getPropNode).srcref(parent);
 
     parent.getParent().addChildAfter(definitionNode, parent);
-    compiler.reportChangeToEnclosingScope(definitionNode);
+    compiler.reportChangeToEnclosingScope(isCrDefinePropertyCall ? call : getPropNode);
   }
 
-  private Node getTypeByCrPropertyKind(Node propertyKind) {
+  @Nullable
+  private Node getTypeByCrPropertyKind(@Nullable Node propertyKind) {
     if (propertyKind == null || propertyKind.matchesQualifiedName("cr.PropertyKind.JS")) {
-      return new Node(Token.QMARK);
+      // This is valid, it just doesn't tell us much about the type.
+      return null;
     }
     if (propertyKind.matchesQualifiedName("cr.PropertyKind.ATTR")) {
       return IR.string("string");
@@ -405,10 +427,10 @@ public class ChromePass extends AbstractPostOrderCallback implements CompilerPas
 
     @Override
     public void visit(NodeTraversal t, Node n, Node parent) {
-      if (n.isFunction()
+      if ((n.isFunction() || n.isClass())
           && parent == this.namespaceBlock
           && this.exports.containsKey(n.getFirstChild().getString())) {
-        // It's a top-level function/constructor definition.
+        // It's a top-level function/constructor/class definition.
         //
         // Change
         //
@@ -420,22 +442,40 @@ public class ChromePass extends AbstractPostOrderCallback implements CompilerPas
         //   /** Some doc */
         //   my.namespace.name.externalName = function internalName() {};
         //
+        // and change
+        //
+        //   /** Some doc */
+        //   class InternalName {}
+        //
+        // to
+        //
+        //   /** Some doc */
+        //   my.namespace.name.ExternalName = class InternalName {};
+        //
         // by looking up in this.exports for internalName to find the correspondent
         // externalName.
-        Node functionTree = n.cloneTree();
-        NodeUtil.markNewScopesChanged(functionTree, compiler);
+        Node clone = n.cloneTree();
+        if (clone.isClass()) {
+          Node className = clone.getFirstChild();
+          className.replaceWith(IR.empty().useSourceInfoFrom(className));
+        }
+        NodeUtil.markNewScopesChanged(clone, compiler);
         Node exprResult =
-            IR.exprResult(IR.assign(buildQualifiedName(n.getFirstChild()), functionTree).srcref(n))
+            IR.exprResult(IR.assign(buildQualifiedName(n.getFirstChild()), clone).srcref(n))
                 .srcref(n);
 
         if (n.getJSDocInfo() != null) {
           exprResult.getFirstChild().setJSDocInfo(n.getJSDocInfo());
-          functionTree.removeProp(Node.JSDOC_INFO_PROP);
+          clone.removeProp(Node.JSDOC_INFO_PROP);
         }
         this.namespaceBlock.replaceChild(n, exprResult);
+        NodeUtil.markFunctionsDeleted(n, compiler);
         compiler.reportChangeToEnclosingScope(exprResult);
-      } else if (n.isName() && this.exports.containsKey(n.getString()) && !parent.isFunction()) {
-        if (parent.isVar()) {
+      } else if (n.isName()
+          && this.exports.containsKey(n.getString())
+          && !parent.isFunction()
+          && !parent.isClass()) {
+        if (NodeUtil.isNameDeclaration(parent)) {
           if (parent.getParent() == this.namespaceBlock) {
             // It's a top-level exported variable definition (maybe without an
             // assignment).

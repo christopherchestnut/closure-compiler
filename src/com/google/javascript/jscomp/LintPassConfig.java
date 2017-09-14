@@ -28,6 +28,7 @@ import com.google.javascript.jscomp.lint.CheckPrototypeProperties;
 import com.google.javascript.jscomp.lint.CheckRequiresAndProvidesSorted;
 import com.google.javascript.jscomp.lint.CheckUnusedLabels;
 import com.google.javascript.jscomp.lint.CheckUselessBlocks;
+import com.google.javascript.jscomp.parsing.parser.FeatureSet;
 import java.util.List;
 
 /**
@@ -65,15 +66,20 @@ class LintPassConfig extends PassConfig.PassConfigDelegate {
                   new CheckMissingSemicolon(compiler),
                   new CheckMissingSuper(compiler),
                   new CheckPrimitiveAsObject(compiler),
+                  new ClosureCheckModule(compiler),
                   new CheckRequiresAndProvidesSorted(compiler),
-                  new CheckRequiresForConstructors(
-                      compiler, CheckRequiresForConstructors.Mode.SINGLE_FILE),
+                  new CheckMissingAndExtraRequires(
+                      compiler, CheckMissingAndExtraRequires.Mode.SINGLE_FILE),
                   new CheckSideEffects(
                       compiler, /* report */ true, /* protectSideEffectFreeCode */ false),
                   new CheckUnusedLabels(compiler),
                   new CheckUselessBlocks(compiler),
-                  new ClosureCheckModule(compiler),
                   new Es6SuperCheck(compiler)));
+        }
+
+        @Override
+        protected FeatureSet featureSet() {
+          return FeatureSet.latest().withoutTypes();
         }
       };
 
@@ -83,13 +89,23 @@ class LintPassConfig extends PassConfig.PassConfigDelegate {
         protected CompilerPass create(AbstractCompiler compiler) {
           return new VariableReferenceCheck(compiler);
         }
+
+        @Override
+        protected FeatureSet featureSet() {
+          return FeatureSet.latest().withoutTypes();
+        }
       };
 
   private final PassFactory closureRewriteClass =
-      new PassFactory("closureRewriteClass", true) {
+      new PassFactory(PassNames.CLOSURE_REWRITE_CLASS, true) {
         @Override
         protected HotSwapCompilerPass create(AbstractCompiler compiler) {
           return new ClosureRewriteClass(compiler);
+        }
+
+        @Override
+        protected FeatureSet featureSet() {
+          return FeatureSet.latest().withoutTypes();
         }
       };
 
@@ -102,6 +118,11 @@ class LintPassConfig extends PassConfig.PassConfigDelegate {
               ImmutableList.<Callback>of(
                   new CheckInterfaces(compiler),
                   new CheckPrototypeProperties(compiler)));
+        }
+
+        @Override
+        protected FeatureSet featureSet() {
+          return FeatureSet.latest().withoutTypes();
         }
       };
 }

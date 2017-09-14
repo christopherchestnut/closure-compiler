@@ -355,11 +355,17 @@ public class CommandLineRunner extends
         usage = "Parse inline source maps (//# sourceMappingURL=data:...)")
     private Boolean parseInlineSourceMaps = true;
 
-    @Option(name = "--apply_input_source_maps",
-        handler = BooleanOptionHandler.class,
-        hidden = true,
-        usage = "Whether to apply input source maps to the output source map, "
-        + "i.e. have the result map back to original inputs")
+    @Option(
+      name = "--apply_input_source_maps",
+      handler = BooleanOptionHandler.class,
+      hidden = true,
+      usage =
+          "Apply input source maps to the output source map, i.e. have the result map back to"
+              + "original inputs.  Input sourcemaps can be located in 2 ways:\n 1) by the"
+              + "//# sourceMappingURL=<url>. \n 2) using the--source_map_location_mapping flag.\n"
+              + "sourceMappingURL=<url> can read both paths and inline Base64 encoded sourcemaps. "
+              + "For inline Base64 encoded sourcemaps, see --parse_inline_source_maps."
+    )
     private boolean applyInputSourceMaps = true;
 
     // Used to define the flag, values are stored by the handler.
@@ -629,8 +635,8 @@ public class CommandLineRunner extends
 
     @Option(name = "--flagfile",
         hidden = true,
-        usage = "A file containing additional command-line options.")
-    private String flagFile = "";
+        usage = "A file (or files) containing additional command-line options.")
+    private List<String> flagFiles = new ArrayList<>();
 
     @Option(name = "--warnings_whitelist_file",
         usage = "A file containing warnings to suppress. Each line should be "
@@ -757,10 +763,18 @@ public class CommandLineRunner extends
       usage =
           "Specifies how the compiler locates modules. BROWSER requires all module imports "
               + "to begin with a '.' or '/' and have a file extension. NODE uses the node module "
-              + "rules. LEGACY prepends a '/' to any import not already beginning with a "
-              + "'.' or '/'."
+              + "rules."
     )
-    private ModuleLoader.ResolutionMode moduleResolutionMode = ModuleLoader.ResolutionMode.LEGACY;
+    private ModuleLoader.ResolutionMode moduleResolutionMode = ModuleLoader.ResolutionMode.BROWSER;
+
+    @Option(
+      name = "--package_json_entry_names",
+      usage =
+          "Ordered list of entries to look for in package.json files when processing "
+              + "modules with the NODE module resolution strategy (i.e. esnext:main,browser,main). "
+              + "Defaults to a list with the following entries: \"browser\", \"module\", \"main\"."
+    )
+    private String packageJsonEntryNames = null;
 
     @Argument
     private List<String> arguments = new ArrayList<>();
@@ -839,7 +853,8 @@ public class CommandLineRunner extends
                     "js_module_root",
                     "module_resolution",
                     "process_common_js_modules",
-                    "transform_amd_modules"))
+                    "transform_amd_modules",
+                    "package_json_entry_names"))
             .putAll(
                 "Library and Framework Specific",
                 ImmutableList.of(
@@ -1071,6 +1086,10 @@ public class CommandLineRunner extends
       return result.build();
     }
 
+    List<String> getPackageJsonEntryNames() throws CmdLineException {
+      return Splitter.on(',').splitToList(packageJsonEntryNames);
+    }
+
     // Our own option parser to be backwards-compatible.
     // It needs to be public because of the crazy reflection that args4j does.
     public static class BooleanOptionHandler extends OptionHandler<Boolean> {
@@ -1292,9 +1311,19 @@ public class CommandLineRunner extends
     errorStream.flush();
   }
 
-  private void processFlagFile()
+  private void processFlagFiles() throws CmdLineException {
+    for (String flagFile : flags.flagFiles) {
+      try {
+        processFlagFile(flagFile);
+      } catch (IOException ioErr) {
+        reportError("ERROR - " + flagFile + " read error.");
+      }
+    }
+  }
+
+  private void processFlagFile(String flagFileString)
             throws CmdLineException, IOException {
-    Path flagFile = Paths.get(flags.flagFile);
+    Path flagFile = Paths.get(flagFileString);
 
     BufferedReader buffer =
       java.nio.file.Files.newBufferedReader(flagFile, UTF_8);
@@ -1351,7 +1380,7 @@ public class CommandLineRunner extends
       tokens.add(builder.toString());
     }
 
-    flags.flagFile = "";
+    flags.flagFiles = new ArrayList<>();
 
     tokens = processArgs(tokens.toArray(new String[0]));
 
@@ -1366,7 +1395,7 @@ public class CommandLineRunner extends
     Flags.mixedJsSources.addAll(previousMixedJsSources);
 
     // Currently we are not supporting this (prevent direct/indirect loops)
-    if (!flags.flagFile.isEmpty()) {
+    if (!flags.flagFiles.isEmpty()) {
       reportError("ERROR - Arguments in the file cannot contain "
           + "--flagfile option.");
     }
@@ -1389,10 +1418,7 @@ public class CommandLineRunner extends
     try {
       flags.parse(processedArgs);
 
-      // For contains --flagfile flag
-      if (!flags.flagFile.isEmpty()) {
-        processFlagFile();
-      }
+      processFlagFiles();
 
       jsFiles = flags.getJsFiles();
       mixedSources = flags.getMixedJsSources();
@@ -1403,7 +1429,7 @@ public class CommandLineRunner extends
     } catch (CmdLineException e) {
       reportError(e.getMessage());
     } catch (IOException ioErr) {
-      reportError("ERROR - " + flags.flagFile + " read error.");
+      reportError("ERROR - ioException: " + ioErr);
     }
 
     List<ModuleIdentifier> entryPoints = new ArrayList<>();
@@ -1662,7 +1688,7 @@ public class CommandLineRunner extends
       options.polymerVersion = flags.polymerVersion;
     }
 
-    options.chromePass = flags.chromePass;
+    options.setChromePass(flags.chromePass);
 
     options.setDartPass(flags.dartPass);
 
@@ -1747,6 +1773,15 @@ public class CommandLineRunner extends
     }
     options.setSourceMapIncludeSourcesContent(flags.sourceMapIncludeSourcesContent);
     options.setModuleResolutionMode(flags.moduleResolutionMode);
+
+    if (flags.packageJsonEntryNames != null) {
+      try {
+        List<String> packageJsonEntryNames = flags.getPackageJsonEntryNames();
+        options.setPackageJsonEntryNames(packageJsonEntryNames);
+      } catch (CmdLineException e) {
+        reportError("ERROR - invalid package_json_entry_names format specified.");
+      }
+    }
 
     return options;
   }

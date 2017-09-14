@@ -16,7 +16,8 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.common.base.Preconditions;
+import static com.google.common.base.Preconditions.checkNotNull;
+
 import com.google.javascript.jscomp.parsing.parser.FeatureSet;
 import com.google.javascript.rhino.Node;
 
@@ -28,7 +29,6 @@ import com.google.javascript.rhino.Node;
  */
 abstract class AbstractPeepholeOptimization {
 
-  private NodeTraversal traversal;
   protected AbstractCompiler compiler;
 
   /**
@@ -59,7 +59,7 @@ abstract class AbstractPeepholeOptimization {
    * Subclasses must call these if they have changed the AST.
    */
   protected void reportCodeChange() {
-    traversal.reportCodeChange();
+    compiler.reportCodeChange();
   }
 
   /**
@@ -70,7 +70,7 @@ abstract class AbstractPeepholeOptimization {
     /* Our implementation delegates to the compiler. We provide this
      * method because we don't want to expose Compiler to PeepholeOptimizations.
      */
-    Preconditions.checkNotNull(compiler);
+    checkNotNull(compiler);
     return compiler.areNodesEqualForInlining(n1, n2);
   }
 
@@ -79,29 +79,15 @@ abstract class AbstractPeepholeOptimization {
    *  and has the Denormalize pass not yet been run?)
    */
   protected boolean isASTNormalized() {
-    Preconditions.checkNotNull(compiler);
+    checkNotNull(compiler);
 
     return compiler.getLifeCycleStage().isNormalized();
   }
 
-  /**
-   * Informs the optimization that a traversal will begin.
-   */
-  void beginTraversal(NodeTraversal traversal) {
-    this.traversal = traversal;
-    this.compiler = traversal.getCompiler();
+  /** Informs the optimization that a traversal will begin. */
+  void beginTraversal(AbstractCompiler compiler) {
+    this.compiler = compiler;
   }
-
-  /**
-   * Informs the optimization that a traversal has completed.
-   */
-  void endTraversal() {
-    this.traversal = null;
-    this.compiler = null;
-  }
-
-  // NodeUtil's mayEffectMutableState and mayHaveSideEffects need access to the
-  // compiler object, route them through here to give them access.
 
   /**
    * @return Whether the node may create new mutable state, or change existing

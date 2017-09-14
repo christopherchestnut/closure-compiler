@@ -15,7 +15,9 @@
  */
 package com.google.javascript.jscomp.lint;
 
-import com.google.common.base.Preconditions;
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
@@ -184,7 +186,7 @@ public final class CheckJSDocStyle extends AbstractPostOrderCallback implements 
     if (n.isMemberFunctionDef() || n.isGetterDef() || n.isSetterDef()) {
       name = n.getString();
     } else {
-      Preconditions.checkState(n.isAssign());
+      checkState(n.isAssign());
       Node lhs = n.getFirstChild();
       if (!lhs.isGetProp()) {
         return;
@@ -275,6 +277,9 @@ public final class CheckJSDocStyle extends AbstractPostOrderCallback implements 
     if (NodeUtil.isNameDeclaration(function.getGrandparent()) || function.getParent().isAssign()) {
       return true;
     }
+    if (function.getParent().isExport()) {
+      return true;
+    }
 
     if (function.getGrandparent().isClassMembers()) {
       Node memberNode = function.getParent();
@@ -354,7 +359,7 @@ public final class CheckJSDocStyle extends AbstractPostOrderCallback implements 
         return;
       } else {
         JSTypeExpression paramType = jsDoc.getType();
-        Preconditions.checkNotNull(paramType, "Inline JSDoc info should always have a type");
+        checkNotNull(paramType, "Inline JSDoc info should always have a type");
         checkParam(t, param, null, paramType);
       }
     }
@@ -377,7 +382,7 @@ public final class CheckJSDocStyle extends AbstractPostOrderCallback implements 
     } else if (param.isName()) {
       nameOptional = param.getString().startsWith("opt_");
     } else {
-      Preconditions.checkState(param.isDestructuringPattern() || param.isRest(), param);
+      checkState(param.isDestructuringPattern() || param.isRest(), param);
       nameOptional = false;
     }
 

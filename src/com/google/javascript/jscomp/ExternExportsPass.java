@@ -16,8 +16,11 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.common.base.Joiner;
-import com.google.common.base.Preconditions;
 import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
@@ -72,8 +75,8 @@ final class ExternExportsPass extends NodeTraversal.AbstractPostOrderCallback
     protected final Node value;
 
     Export(String symbolName, Node value) {
-      this.symbolName = Preconditions.checkNotNull(symbolName);
-      this.value = Preconditions.checkNotNull(value);
+      this.symbolName = checkNotNull(symbolName);
+      this.value = checkNotNull(value);
     }
 
     /**
@@ -81,7 +84,7 @@ final class ExternExportsPass extends NodeTraversal.AbstractPostOrderCallback
      * it to the externsRoot AST.
      */
     void generateExterns() {
-      appendExtern(getExportedPath(), getValue(value));
+      appendExtern(getExportedPath(), getValue());
     }
 
     /**
@@ -144,7 +147,7 @@ final class ExternExportsPass extends NodeTraversal.AbstractPostOrderCallback
             if (valueToExport.isFunction()) {
               initializer = createExternFunction(valueToExport);
             } else {
-              Preconditions.checkState(valueToExport.isObjectLit());
+              checkState(valueToExport.isObjectLit());
               initializer = createExternObjectLit(valueToExport);
             }
           } else if (!isCompletePathPrefix && exportedValueDefinesNewType) {
@@ -205,7 +208,7 @@ final class ExternExportsPass extends NodeTraversal.AbstractPostOrderCallback
         if (pathDefinition.isExprResult()) {
           pathDefinition.getFirstChild().setJSDocInfo(jsdoc);
         } else {
-          Preconditions.checkState(pathDefinition.isVar());
+          checkState(pathDefinition.isVar());
           pathDefinition.setJSDocInfo(jsdoc);
         }
       }
@@ -238,8 +241,8 @@ final class ExternExportsPass extends NodeTraversal.AbstractPostOrderCallback
       }
       Node externFunction = IR.function(IR.name(""), paramList, IR.block());
 
-      if (exportedFunction.getJSType() != null) {
-        externFunction.setJSType(exportedFunction.getJSType());
+      if (exportedFunction.getTypeI() != null) {
+        externFunction.setTypeI(exportedFunction.getTypeI());
         // When this function is printed, it will have a regular jsdoc, so we
         // don't want inline jsdocs as well
         deleteInlineJsdocs(externFunction);
@@ -249,7 +252,7 @@ final class ExternExportsPass extends NodeTraversal.AbstractPostOrderCallback
     }
 
     private void deleteInlineJsdocs(Node fn) {
-      Preconditions.checkArgument(fn.isFunction());
+      checkArgument(fn.isFunction());
       for (Node param : NodeUtil.getFunctionParameters(fn).children()) {
         param.setJSDocInfo(null);
       }
@@ -277,7 +280,7 @@ final class ExternExportsPass extends NodeTraversal.AbstractPostOrderCallback
      */
     private Node createExternObjectLit(Node exportedObjectLit) {
       Node lit = IR.objectlit();
-      lit.setJSType(exportedObjectLit.getJSType());
+      lit.setTypeI(exportedObjectLit.getTypeI());
 
       // This is an indirect way of telling the typed code generator
       // "print the type of this"
@@ -303,7 +306,7 @@ final class ExternExportsPass extends NodeTraversal.AbstractPostOrderCallback
      * a function or object literal, the node is returned. Otherwise,
      * {@code null} is returned.
      */
-    protected Node getValue(Node qualifiedNameNode) {
+    protected Node getValue() {
       String qualifiedName = value.getQualifiedName();
 
       if (qualifiedName == null) {
@@ -373,7 +376,7 @@ final class ExternExportsPass extends NodeTraversal.AbstractPostOrderCallback
     public PropertyExport(String exportPath, String symbolName, Node value) {
       super(symbolName, value);
 
-      this.exportPath = Preconditions.checkNotNull(exportPath);
+      this.exportPath = checkNotNull(exportPath);
     }
 
     @Override

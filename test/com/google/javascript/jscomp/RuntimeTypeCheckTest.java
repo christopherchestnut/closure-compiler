@@ -26,14 +26,13 @@ public final class RuntimeTypeCheckTest extends CompilerTestCase {
 
   public RuntimeTypeCheckTest() {
     super("/** @const */ var undefined;");
-    enableTypeCheck();
-    // TODO(rluble): enable multistage compilation.
-    disableMultistageCompilation();
   }
 
   @Override
-  protected void setUp() {
-    super.enableLineNumberCheck(false);
+  protected void setUp() throws Exception {
+    super.setUp();
+    enableTypeCheck();
+    disableLineNumberCheck();
     enableNormalize();
   }
 
@@ -330,7 +329,7 @@ public final class RuntimeTypeCheckTest extends CompilerTestCase {
   }
 
   @Override
-  NoninjectingCompiler getLastCompiler() {
+  protected NoninjectingCompiler getLastCompiler() {
     return (NoninjectingCompiler) super.getLastCompiler();
   }
 

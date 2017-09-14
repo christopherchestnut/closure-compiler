@@ -20,7 +20,6 @@ import static com.google.javascript.jscomp.CheckGlobalNames.NAME_DEFINED_LATE_WA
 import static com.google.javascript.jscomp.CheckGlobalNames.STRICT_MODULE_DEP_QNAME;
 import static com.google.javascript.jscomp.CheckGlobalNames.UNDEFINED_NAME_WARNING;
 
-import com.google.javascript.jscomp.CompilerOptions.LanguageMode;
 import com.google.javascript.rhino.Node;
 
 /**
@@ -66,9 +65,9 @@ public final class CheckGlobalNamesTest extends CompilerTestCase {
   }
 
   @Override
-  public void setUp() {
+  protected void setUp() throws Exception {
+    super.setUp();
     injectNamespace = false;
-    setAcceptedLanguage(LanguageMode.ECMASCRIPT_2015);
   }
 
   private static final String GET_NAMES =
@@ -380,12 +379,13 @@ public final class CheckGlobalNamesTest extends CompilerTestCase {
   }
 
   public void testPathologicalCaseThatsOkAnyway() {
-    testSame(
-        "var x = {};" +
-        "switch (x) { " +
-        "  default: x.y.z = {}; " +
-        "  case (x.y = {}): break;" +
-        "}", NAME_DEFINED_LATE_WARNING);
+    testWarning(
+        "var x = {};"
+            + "switch (x) { "
+            + "  default: x.y.z = {}; "
+            + "  case (x.y = {}): break;"
+            + "}",
+        NAME_DEFINED_LATE_WARNING);
   }
 
   public void testOkGlobalDeclExpr() {

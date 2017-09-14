@@ -16,7 +16,8 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.common.base.Preconditions;
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.TypeI;
@@ -69,11 +70,12 @@ class RemoveUnusedClassProperties
               || !NodeUtil.mayHaveSideEffects(n.getFirstChild(), compiler)) {
             Node parent = n.getParent();
             parent.removeChild(n);
+            NodeUtil.markFunctionsDeleted(n, compiler);
             compiler.reportChangeToEnclosingScope(parent);
           }
         }
       } else {
-        Preconditions.checkState(n.isGetProp(), n);
+        checkState(n.isGetProp(), n);
         String propName = n.getLastChild().getString();
         if (!used.contains(propName)) {
 
@@ -85,11 +87,19 @@ class RemoveUnusedClassProperties
            * just a plain expression.
            */
           Boolean replaceParent = true;
-          if (NodeUtil.isAssignmentOp(parent)) {
+          if (NodeUtil.isLhsByDestructuring(n)) {
+            if (parent.isStringKey()) {
+              // Remove the entire object-key entry
+              compiler.reportChangeToEnclosingScope(parent);
+              parent.detach();
+              continue;
+            }
+            replacement = IR.empty();
+            replaceParent = parent.isRest();
+          } else if (NodeUtil.isAssignmentOp(parent)) {
             Node assign = parent;
-            Preconditions.checkState(assign != null
-                && NodeUtil.isAssignmentOp(assign)
-                && assign.getFirstChild() == n);
+            checkState(
+                assign != null && NodeUtil.isAssignmentOp(assign) && assign.getFirstChild() == n);
             compiler.reportChangeToEnclosingScope(assign);
             // 'this.x = y' to 'y'
             replacement = assign.getLastChild().detach();
@@ -147,23 +157,17 @@ class RemoveUnusedClassProperties
            candidates.add(n);
          }
          break;
-       }
-
+      }
       case OBJECTLIT:
-        {
-          // Assume any object literal definition might be a reflection on the
-          // class property.
-          if (!NodeUtil.isObjectDefinePropertiesDefinition(n.getParent())) {
-            for (Node c : n.children()) {
-              // Object literals can contain computed_prop fields.
-              if (!c.isComputedProp()) {
-                used.add(c.getString());
-              }
-            }
-          }
-          break;
+      case OBJECT_PATTERN: {
+        // Assume any object literal definition might be a reflection on the
+        // class property.
+        if (!NodeUtil.isObjectDefinePropertiesDefinition(n.getParent())) {
+          addObjectNodePropertiesToUsed(n);
         }
-      case CLASS:
+        break;
+      }
+      case CLASS: {
         Node classMemberDefs = n.getLastChild();
         for (Node m : classMemberDefs.children()) {
           // Computed props are treated as unremovable for now.
@@ -172,7 +176,8 @@ class RemoveUnusedClassProperties
           }
         }
         break;
-      case CALL:
+      }
+      case CALL: {
         // Look for properties referenced through the property rename functions.
         Node target = n.getFirstChild();
         if (n.hasMoreThanOneChild()
@@ -196,13 +201,14 @@ class RemoveUnusedClassProperties
            }
          }
          break;
+      }
       default:
         break;
     }
   }
 
   private boolean isRemovablePropertyDefinition(Node n) {
-    Preconditions.checkState(n.isGetProp(), n);
+    checkState(n.isGetProp(), n);
     Node target = n.getFirstChild();
     return target.isThis()
         || (this.removeUnusedConstructorProperties && isConstructor(target))
@@ -225,9 +231,13 @@ class RemoveUnusedClassProperties
     //  - an expression statement (x.a;)
     //  - a compound assignment or increment (x++, x += 1) whose result is
     //    otherwise unused
+    //  - a lhs of destructuring assignment ([x.a] = [1])
 
     Node parent = n.getParent();
-    if (n == parent.getFirstChild()) {
+
+    if (NodeUtil.isLhsByDestructuring(n)) {
+      return false;
+    } else if (n == parent.getFirstChild()) {
       if (parent.isAssign() || parent.isExprResult()) {
         // A simple assignment or expression statement doesn't pin the property.
         return false;
@@ -243,5 +253,16 @@ class RemoveUnusedClassProperties
       }
     }
     return true;
+  }
+
+  /** Adds the property names of the Object Lit or Object Pattern node n to the used set */
+  private void addObjectNodePropertiesToUsed(Node n) {
+    for (Node c : n.children()) {
+      if (!c.isComputedProp()) {
+        // Objects can contain computed_prop fields
+        // and we are ignoring computed props.
+        used.add(NodeUtil.getObjectLitKeyName(c));
+      }
+    }
   }
 }

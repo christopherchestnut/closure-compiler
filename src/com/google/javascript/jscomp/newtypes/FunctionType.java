@@ -16,6 +16,11 @@
 
 package com.google.javascript.jscomp.newtypes;
 
+import static com.google.common.base.MoreObjects.firstNonNull;
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.common.base.Function;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
@@ -25,6 +30,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.LinkedHashMultimap;
 import com.google.common.collect.Multimap;
+import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.TypeI;
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -56,10 +62,10 @@ public final class FunctionType implements Serializable {
   // If this FunctionType is a prototype method, this field stores the
   // type of the instance.
   private final JSType receiverType;
-  // Non-empty iff this function has an @template annotation. Note that a function type can have
-  // type variables as formal parameters and still have empty typeParameters, eg, a method without
-  // @template defined on a generic class.
-  private final ImmutableList<String> typeParameters;
+  // Set to TypeParameters.EMPTY for a function without a @template annotation.
+  // Note that a function type can have type variables as formal parameters and still have empty
+  // typeParameters, e.g., a method without @template defined on a generic class.
+  private final TypeParameters typeParameters;
   private static final boolean DEBUGGING = false;
 
   private FunctionType(
@@ -71,10 +77,10 @@ public final class FunctionType implements Serializable {
       JSType nominalType,
       JSType receiverType,
       ImmutableMap<String, JSType> outerVars,
-      ImmutableList<String> typeParameters,
+      TypeParameters typeParameters,
       boolean isLoose,
       boolean isAbstract) {
-    Preconditions.checkNotNull(commonTypes);
+    checkNotNull(commonTypes);
     this.commonTypes = commonTypes;
     this.requiredFormals = requiredFormals;
     this.optionalFormals = optionalFormals;
@@ -96,16 +102,16 @@ public final class FunctionType implements Serializable {
   // we do not want to accidentally make a top function be equals() to some other
   // function type. The return type is unknown for convenience.
   private FunctionType(JSTypes commonTypes, boolean isLoose) {
-    Preconditions.checkNotNull(commonTypes);
+    checkNotNull(commonTypes);
     this.commonTypes = commonTypes;
     this.requiredFormals = null;
     this.optionalFormals = null;
     this.restFormals = null;
-    this.returnType = Preconditions.checkNotNull(this.commonTypes.UNKNOWN);
+    this.returnType = checkNotNull(this.commonTypes.UNKNOWN);
     this.nominalType = null;
     this.receiverType = null;
     this.outerVarPreconditions = null;
-    this.typeParameters = ImmutableList.of();
+    this.typeParameters = TypeParameters.EMPTY;
     this.isLoose = isLoose;
     this.isAbstract = false;
   }
@@ -124,19 +130,20 @@ public final class FunctionType implements Serializable {
     Preconditions.checkNotNull(requiredFormals,
         "null required formals for function: %s", this);
     for (JSType formal : requiredFormals) {
-      Preconditions.checkNotNull(formal);
+      checkNotNull(formal);
       // A loose function has bottom formals in the bwd direction of NTI.
       // See NTI#analyzeLooseCallNodeBwd.
-      Preconditions.checkState(isLoose || !formal.isBottom());
+      checkState(isLoose || !formal.isBottom());
     }
     Preconditions.checkNotNull(optionalFormals,
         "null optional formals for function: %s", this);
     for (JSType formal : optionalFormals) {
-      Preconditions.checkNotNull(formal);
-      Preconditions.checkState(!formal.isBottom());
+      checkNotNull(formal);
+      checkState(!formal.isBottom());
     }
-    Preconditions.checkState(restFormals == null || !restFormals.isBottom());
-    Preconditions.checkNotNull(returnType);
+    checkState(restFormals == null || !restFormals.isBottom());
+    checkNotNull(returnType);
+    checkNotNull(typeParameters);
   }
 
   /** Returns the JSTypes instance stored by this object. */
@@ -195,7 +202,7 @@ public final class FunctionType implements Serializable {
       JSType nominalType,
       JSType receiverType,
       Map<String, JSType> outerVars,
-      ImmutableList<String> typeParameters,
+      TypeParameters typeParameters,
       boolean isLoose,
       boolean isAbstract) {
     if (requiredFormals == null) {
@@ -206,9 +213,6 @@ public final class FunctionType implements Serializable {
     }
     if (outerVars == null) {
       outerVars = ImmutableMap.of();
-    }
-    if (typeParameters == null) {
-      typeParameters = ImmutableList.of();
     }
     if (restFormals != null) {
       // Remove trailing optional params w/ type equal to restFormals
@@ -226,7 +230,7 @@ public final class FunctionType implements Serializable {
         ImmutableList.copyOf(optionalFormals),
         restFormals, retType, nominalType, receiverType,
         ImmutableMap.copyOf(outerVars),
-        typeParameters,
+        firstNonNull(typeParameters, TypeParameters.EMPTY),
         isLoose,
         isAbstract);
   }
@@ -305,7 +309,7 @@ public final class FunctionType implements Serializable {
    * @throws IllegalStateException if this is not a unique constructor.
    */
   public JSType getSuperPrototype() {
-    Preconditions.checkState(isUniqueConstructor());
+    checkState(isUniqueConstructor());
     NominalType nt = getNominalTypeIfSingletonObj(this.nominalType);
     NominalType superClass = nt.getInstantiatedSuperclass();
     return superClass == null ? null : superClass.getPrototypePropertyOfCtor();
@@ -339,7 +343,7 @@ public final class FunctionType implements Serializable {
    * @throws IllegalStateException if there is no rest parameter.
    */
   public JSType getRestFormalsType() {
-    Preconditions.checkNotNull(restFormals);
+    checkNotNull(restFormals);
     return restFormals;
   }
 
@@ -350,7 +354,7 @@ public final class FunctionType implements Serializable {
    * @throws IllegalStateException if this is the top function (rather than returning bottom).
    */
   public JSType getFormalType(int argpos) {
-    Preconditions.checkState(!isTopFunction());
+    checkState(!isTopFunction());
     int numReqFormals = requiredFormals.size();
     if (argpos < numReqFormals) {
       return requiredFormals.get(argpos);
@@ -375,7 +379,7 @@ public final class FunctionType implements Serializable {
    * @throws IllegalStateException if this is the top function.
    */
   public JSType getOuterVarPrecondition(String name) {
-    Preconditions.checkState(!isTopFunction());
+    checkState(!isTopFunction());
     return outerVarPreconditions.get(name);
   }
 
@@ -386,7 +390,7 @@ public final class FunctionType implements Serializable {
    *     effectively-infinite minimum arity.
    */
   public int getMinArity() {
-    Preconditions.checkState(!isTopFunction());
+    checkState(!isTopFunction());
     return requiredFormals.size();
   }
 
@@ -398,7 +402,7 @@ public final class FunctionType implements Serializable {
    * @throws IllegalStateException if this is the top function.
    */
   public int getMaxArity() {
-    Preconditions.checkArgument(!isTopFunction());
+    checkArgument(!isTopFunction());
     if (restFormals != null) {
       return Integer.MAX_VALUE; // "Infinite" arity
     } else {
@@ -439,7 +443,7 @@ public final class FunctionType implements Serializable {
     NominalType nominal = getNominalTypeIfSingletonObj(this.nominalType);
     return nominal == null
         ? null
-        : nominal.instantiateGenerics(this.commonTypes.MAP_TO_UNKNOWN).getInstanceAsJSType();
+        : nominal.substituteGenerics(this.commonTypes.MAP_TO_UNKNOWN).getInstanceAsJSType();
   }
 
   /**
@@ -463,7 +467,7 @@ public final class FunctionType implements Serializable {
     }
     NominalType nt = this.receiverType.getNominalTypeIfSingletonObj();
     if (nt != null && nt.isUninstantiatedGenericType()) {
-      builder.addTypeParameters(nt.getTypeParameters());
+      builder.addTypeParameters(TypeParameters.make(nt.getTypeParameters()));
       NominalType ntWithIdentity = nt.instantiateGenericsWithIdentity();
       builder.addReqFormal(JSType.fromObjectType(ObjectType.fromNominalType(ntWithIdentity)));
     } else {
@@ -581,7 +585,7 @@ public final class FunctionType implements Serializable {
   // TODO(dimvar): we need to clean up the combination of loose functions with
   // new: and/or this: types. Eg, this.nominalType doesn't appear at all.
   private static FunctionType looseMerge(FunctionType f1, FunctionType f2) {
-    Preconditions.checkArgument(f1.isLoose() || f2.isLoose());
+    checkArgument(f1.isLoose() || f2.isLoose());
 
     FunctionTypeBuilder builder = new FunctionTypeBuilder(f1.commonTypes);
     int minRequiredArity = Math.min(f1.getMinArity(), f2.getMinArity());
@@ -634,7 +638,7 @@ public final class FunctionType implements Serializable {
    */
   static void whyNotSubtypeOf(FunctionType f1, FunctionType f2,
       SubtypeCache subSuperMap, MismatchInfo[] boxedInfo) {
-    Preconditions.checkArgument(boxedInfo.length == 1);
+    checkArgument(boxedInfo.length == 1);
     f1.isSubtypeOfHelper(f2, true, subSuperMap, boxedInfo);
   }
 
@@ -671,7 +675,7 @@ public final class FunctionType implements Serializable {
     // NOTE(dimvar): We never happen to call isSubtypeOf for loose functions.
     // If some analyzed program changes this, the preconditions check will tell
     // us so we can handle looseness correctly.
-    Preconditions.checkState(!isLoose() && !other.isLoose());
+    checkState(!isLoose() && !other.isLoose());
     if (this.isGeneric()) {
       if (this.equals(other)) {
         return true;
@@ -977,7 +981,7 @@ public final class FunctionType implements Serializable {
    */
   // TODO(sdh): make this method static to emphasize parameter symmetry.
   boolean isLooseSubtypeOf(FunctionType f2) {
-    Preconditions.checkState(this.isLoose() || f2.isLoose());
+    checkState(this.isLoose() || f2.isLoose());
     if (this.isTopFunction() || f2.isTopFunction()) {
       return true;
     }
@@ -1006,7 +1010,12 @@ public final class FunctionType implements Serializable {
    * instantiated, the type parameters have already been substituted away.)
    */
   public List<String> getTypeParameters() {
-    return typeParameters;
+    return this.typeParameters.asList();
+  }
+
+  /** Always returns a non-null map. */
+  public Map<String, Node> getTypeTransformations() {
+    return this.typeParameters.getTypeTransformations();
   }
 
   /**
@@ -1045,9 +1054,8 @@ public final class FunctionType implements Serializable {
       Multimap<String, JSType> typeMultimap, SubtypeCache subSuperMap) {
     Preconditions.checkState(this.typeParameters.isEmpty(),
         "Non-empty type parameters %s", this.typeParameters);
-    Preconditions.checkState(this == this.commonTypes.LOOSE_TOP_FUNCTION
-        || this.outerVarPreconditions.isEmpty());
-    Preconditions.checkState(this != this.commonTypes.TOP_FUNCTION);
+    checkState(this == this.commonTypes.LOOSE_TOP_FUNCTION || this.outerVarPreconditions.isEmpty());
+    checkState(this != this.commonTypes.TOP_FUNCTION);
 
     if (this == this.commonTypes.LOOSE_TOP_FUNCTION || other.isTopFunction() || other.isLoose()) {
       return true;
@@ -1111,7 +1119,7 @@ public final class FunctionType implements Serializable {
         other.returnType, typeParameters, typeMultimap, subSuperMap);
   }
 
-  private FunctionType instantiateGenericsWithUnknown() {
+  public FunctionType instantiateGenericsWithUnknown() {
     if (!isGeneric()) {
       return this;
     }
@@ -1125,7 +1133,7 @@ public final class FunctionType implements Serializable {
    * @return The unified type, or null if unification fails
    */
   static FunctionType unifyUnknowns(FunctionType f1, FunctionType f2) {
-    Preconditions.checkState(f1 != null || f2 != null);
+    checkState(f1 != null || f2 != null);
     if (f1 == null || f2 == null) {
       return null;
     }
@@ -1135,7 +1143,7 @@ public final class FunctionType implements Serializable {
     if (!f2.typeParameters.isEmpty()) {
       f2 = f2.instantiateGenericsWithUnknown();
     }
-    Preconditions.checkState(!f1.isLoose() && !f2.isLoose());
+    checkState(!f1.isLoose() && !f2.isLoose());
     if (f1.equals(f2)) {
       return f1;
     }
@@ -1202,36 +1210,35 @@ public final class FunctionType implements Serializable {
   }
 
   /**
-   * Returns a version of nt with generics substituted from typeMap. This is a more efficient
+   * Returns a version of t with generics substituted from typeMap. This is a more efficient
    * alternative to {@link JSType#substituteGenerics} in the case of singleton objects,
    * since it can avoid creating new types.
    *
    * <p>TODO(sdh): is there a reason not to build this optimization directly
    * into JSType#substituteGenerics?
    */
-  private static JSType substGenericsInNomType(JSType nt, Map<String, JSType> typeMap) {
-    if (nt == null) {
+  private static JSType substGenericsInNomType(JSType t, Map<String, JSType> typeMap) {
+    if (t == null) {
       return null;
     }
-    NominalType tmp = nt.getNominalTypeIfSingletonObj();
-    if (tmp == null) {
-      return nt.substituteGenerics(typeMap);
+    NominalType nt = t.getNominalTypeIfSingletonObj();
+    if (nt == null) {
+      return t.substituteGenerics(typeMap);
     }
-    if (!tmp.isGeneric()) {
-      return tmp.getInstanceAsJSType();
+    if (!nt.isGeneric()) {
+      return nt.getInstanceAsJSType();
     }
     if (typeMap.isEmpty()) {
-      return nt;
+      return t;
     }
-    return JSType.fromObjectType(ObjectType.fromNominalType(
-        tmp.instantiateGenerics(typeMap)));
+    return JSType.fromObjectType(ObjectType.fromNominalType(nt.substituteGenerics(typeMap)));
   }
 
   /**
    * Returns a FunctionType with free type variables substituted using typeMap.
    * There must be no overlap between this function's generic type parameters
    * and the types in the map (i.e. this is not instantiating a generic
-   * function: that's done in {@link #substituteParametericGenerics}).
+   * function: that's done in {@link #instantiateGenerics}).
    * @throws IllegalStateException if typeMap's keys overlap with type parameters.
    */
   private FunctionType substituteNominalGenerics(Map<String, JSType> typeMap) {
@@ -1241,8 +1248,8 @@ public final class FunctionType implements Serializable {
     if (!this.commonTypes.MAP_TO_UNKNOWN.equals(typeMap)) {
       // Before we switched to unique generated names for type variables, a method's type variables
       // could shadow type variables defined on the class. Check that this no longer happens.
-      for (String typeParam : this.typeParameters) {
-        Preconditions.checkState(!typeMap.containsKey(typeParam));
+      for (String typeParam : this.typeParameters.asList()) {
+        checkState(!typeMap.containsKey(typeParam));
       }
     }
     FunctionTypeBuilder builder = new FunctionTypeBuilder(this.commonTypes);
@@ -1266,55 +1273,6 @@ public final class FunctionType implements Serializable {
       builder.addOuterVarPrecondition(var, this.outerVarPreconditions.get(var));
     }
     builder.addTypeParameters(this.typeParameters);
-    return builder.buildFunction();
-  }
-
-  /** @see #instantiateGenerics */
-  private FunctionType substituteParametricGenerics(Map<String, JSType> typeMap) {
-    if (typeMap.isEmpty()) {
-      return this;
-    }
-    FunctionTypeBuilder builder = new FunctionTypeBuilder(this.commonTypes);
-    for (JSType reqFormal : this.requiredFormals) {
-      builder.addReqFormal(reqFormal.substituteGenerics(typeMap));
-    }
-    for (JSType optFormal : this.optionalFormals) {
-      builder.addOptFormal(optFormal.substituteGenerics(typeMap));
-    }
-    if (this.restFormals != null) {
-      builder.addRestFormals(restFormals.substituteGenerics(typeMap));
-    }
-    builder.addRetType(this.returnType.substituteGenerics(typeMap));
-    if (isLoose()) {
-      builder.addLoose();
-    }
-    builder.addNominalType(substGenericsInNomType(this.nominalType, typeMap));
-    if (this.receiverType != null) {
-      // NOTE(dimvar):
-      // We have no way of knowing if receiverType comes from an @this
-      // annotation, or because this type represents a method.
-      // In case 1, we would want to substitute in receiverType, in case 2 we
-      // don't, it's a different scope for the type variables.
-      // To properly track this we would need two separate fields instead of
-      // just receiverType.
-      // Instead, the IF test is a heuristic that works in most cases.
-      // In the else branch, we are substituting incorrectly when receiverType
-      // comes from a method declaration, but I have not been able to find a
-      // test that exposes the bug.
-      NominalType recvType = getNominalTypeIfSingletonObj(this.receiverType);
-      if (recvType != null && recvType.isUninstantiatedGenericType()) {
-        // Receiver came from enclosing class: don't substitute generics.
-        // TODO(sdh): consider eliminating this branch now that generics are uniquified.
-        builder.addReceiverType(this.receiverType);
-      } else {
-        // Receiver was explicitly specified as @this: substitute.
-        builder.addReceiverType(substGenericsInNomType(this.receiverType, typeMap));
-      }
-    }
-    // TODO(blickly): Do we need instatiation here?
-    for (String var : outerVarPreconditions.keySet()) {
-      builder.addOuterVarPrecondition(var, outerVarPreconditions.get(var));
-    }
     return builder.buildFunction();
   }
 
@@ -1342,25 +1300,48 @@ public final class FunctionType implements Serializable {
    * variables found in formal parameters and returns.
    */
   public FunctionType instantiateGenerics(Map<String, JSType> typeMap) {
-    Preconditions.checkState(isGeneric());
-    return substituteParametricGenerics(typeMap);
+    checkState(isGeneric());
+    if (typeMap.isEmpty()) {
+      return this;
+    }
+    FunctionTypeBuilder builder = new FunctionTypeBuilder(this.commonTypes);
+    for (JSType reqFormal : this.requiredFormals) {
+      builder.addReqFormal(reqFormal.substituteGenerics(typeMap));
+    }
+    for (JSType optFormal : this.optionalFormals) {
+      builder.addOptFormal(optFormal.substituteGenerics(typeMap));
+    }
+    if (this.restFormals != null) {
+      builder.addRestFormals(restFormals.substituteGenerics(typeMap));
+    }
+    builder.addRetType(this.returnType.substituteGenerics(typeMap));
+    if (isLoose()) {
+      builder.addLoose();
+    }
+    builder.addNominalType(substGenericsInNomType(this.nominalType, typeMap));
+    builder.addReceiverType(substGenericsInNomType(this.receiverType, typeMap));
+    // TODO(blickly): Do we need instatiation here?
+    for (String var : outerVarPreconditions.keySet()) {
+      builder.addOuterVarPrecondition(var, outerVarPreconditions.get(var));
+    }
+    return builder.buildFunction();
   }
 
   /**
    * Given concrete types for the arguments, unify with the formals to create
    * a type map, and then instantiate this function as usual, by calling
-   * {@link #substituteParametricGenerics}.
+   * {@link #instantiateGenerics}.
    * @throws IllegalStateException if this is not a generic function.
    */
   public FunctionType instantiateGenericsFromArgumentTypes(JSType recvtype, List<JSType> argTypes) {
-    Preconditions.checkState(isGeneric());
+    checkState(isGeneric());
     if (argTypes.size() < getMinArity() || argTypes.size() > getMaxArity()) {
       return null;
     }
     Multimap<String, JSType> typeMultimap = LinkedHashMultimap.create();
     if (recvtype != null
-        && !getThisType()
-            .unifyWithSubtype(recvtype, typeParameters, typeMultimap, SubtypeCache.create())) {
+        && !getThisType().unifyWithSubtype(
+            recvtype, typeParameters.asList(), typeMultimap, SubtypeCache.create())) {
       return null;
     }
     for (int i = 0, size = argTypes.size(); i < size; i++) {
@@ -1369,12 +1350,12 @@ public final class FunctionType implements Serializable {
         continue;
       }
       if (!this.getFormalType(i).unifyWithSubtype(
-          argType, typeParameters, typeMultimap, SubtypeCache.create())) {
+          argType, typeParameters.asList(), typeMultimap, SubtypeCache.create())) {
         return null;
       }
     }
     ImmutableMap.Builder<String, JSType> builder = ImmutableMap.builder();
-    for (String typeParam : typeParameters) {
+    for (String typeParam : typeParameters.asList()) {
       Collection<JSType> types = typeMultimap.get(typeParam);
       if (types.size() > 1) {
         return null;
@@ -1384,7 +1365,7 @@ public final class FunctionType implements Serializable {
         builder.put(typeParam, Iterables.getOnlyElement(types));
       }
     }
-    return substituteParametricGenerics(builder.build());
+    return instantiateGenerics(builder.build());
   }
 
   /** Returns a new FunctionType with the receiverType promoted to the first argument type. */
@@ -1401,6 +1382,56 @@ public final class FunctionType implements Serializable {
         typeParameters,
         isLoose,
         isAbstract);
+  }
+
+  /**
+   * Returns a function that is the same as this one, but whose receiver is ?.
+   */
+  FunctionType withUnknownReceiver() {
+    return new FunctionType(
+        this.commonTypes,
+        this.requiredFormals,
+        this.optionalFormals,
+        this.restFormals,
+        this.returnType,
+        this.nominalType,
+        this.commonTypes.UNKNOWN,
+        this.outerVarPreconditions,
+        this.typeParameters,
+        this.isLoose,
+        this.isAbstract);
+  }
+
+  /** Returns a function that is the same as this one, but whose return type is returnType. */
+  FunctionType withReturnType(JSType returnType) {
+    return new FunctionType(
+        this.commonTypes,
+        this.requiredFormals,
+        this.optionalFormals,
+        this.restFormals,
+        returnType,
+        this.nominalType,
+        this.receiverType,
+        this.outerVarPreconditions,
+        this.typeParameters,
+        this.isLoose,
+        this.isAbstract);
+  }
+
+  /** Returns a function that is the same as this one, but with no parameters. */
+  FunctionType withNoParameters() {
+    return new FunctionType(
+        this.commonTypes,
+        ImmutableList.<JSType>of(),
+        ImmutableList.<JSType>of(),
+        null,
+        this.returnType,
+        this.nominalType,
+        this.receiverType,
+        this.outerVarPreconditions,
+        this.typeParameters,
+        this.isLoose,
+        this.isAbstract);
   }
 
   @Override
@@ -1459,7 +1490,7 @@ public final class FunctionType implements Serializable {
     }
     if (!this.typeParameters.isEmpty()) {
       builder.append("<");
-      builder.append(Joiner.on(",").join(getPrettyTypeParams(this.typeParameters, ctx)));
+      Joiner.on(",").appendTo(builder, getPrettyTypeParams(this.typeParameters.asList(), ctx));
       builder.append(">");
     }
     builder.append("function(");
@@ -1490,7 +1521,7 @@ public final class FunctionType implements Serializable {
     }
     builder.append(')');
     if (returnType != null) {
-      builder.append(':');
+      builder.append(": ");
       returnType.appendTo(builder, ctx);
     }
     if (isLoose()) {

@@ -15,7 +15,8 @@
  */
 package com.google.javascript.jscomp;
 
-import com.google.common.base.Preconditions;
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.javascript.jscomp.GlobalNamespace.Name;
@@ -65,10 +66,14 @@ final class PolymerBehaviorExtractor {
     for (Node behaviorName : behaviorArray.children()) {
       if (behaviorName.isObjectLit()) {
         PolymerPassStaticUtils.switchDollarSignPropsToBrackets(behaviorName, compiler);
-        PolymerPassStaticUtils.quoteListenerAndHostAttributeKeys(behaviorName);
+        PolymerPassStaticUtils.quoteListenerAndHostAttributeKeys(behaviorName, compiler);
+        if (NodeUtil.getFirstPropMatchingKey(behaviorName, "is") != null) {
+          compiler.report(JSError.make(behaviorName, PolymerPassErrors.POLYMER_INVALID_BEHAVIOR));
+        }
         behaviors.add(
             new BehaviorDefinition(
-                PolymerPassStaticUtils.extractProperties(behaviorName, compiler),
+                PolymerPassStaticUtils.extractProperties(
+                    behaviorName, PolymerClassDefinition.DefinitionType.ObjectLiteral, compiler),
                 getBehaviorFunctionsToCopy(behaviorName),
                 getNonPropertyMembersToCopy(behaviorName),
                 !NodeUtil.isInFunction(behaviorName),
@@ -118,10 +123,14 @@ final class PolymerBehaviorExtractor {
         behaviors.addAll(extractBehaviors(behaviorValue));
       } else if (behaviorValue.isObjectLit()) {
         PolymerPassStaticUtils.switchDollarSignPropsToBrackets(behaviorValue, compiler);
-        PolymerPassStaticUtils.quoteListenerAndHostAttributeKeys(behaviorValue);
+        PolymerPassStaticUtils.quoteListenerAndHostAttributeKeys(behaviorValue, compiler);
+        if (NodeUtil.getFirstPropMatchingKey(behaviorValue, "is") != null) {
+          compiler.report(JSError.make(behaviorValue, PolymerPassErrors.POLYMER_INVALID_BEHAVIOR));
+        }
         behaviors.add(
             new BehaviorDefinition(
-                PolymerPassStaticUtils.extractProperties(behaviorValue, compiler),
+                PolymerPassStaticUtils.extractProperties(
+                    behaviorValue, PolymerClassDefinition.DefinitionType.ObjectLiteral, compiler),
                 getBehaviorFunctionsToCopy(behaviorValue),
                 getNonPropertyMembersToCopy(behaviorValue),
                 isGlobalDeclaration,
@@ -138,7 +147,7 @@ final class PolymerBehaviorExtractor {
    * @return A list of functions from a behavior which should be copied to the element prototype.
    */
   private static ImmutableList<MemberDefinition> getBehaviorFunctionsToCopy(Node behaviorObjLit) {
-    Preconditions.checkState(behaviorObjLit.isObjectLit());
+    checkState(behaviorObjLit.isObjectLit());
     ImmutableList.Builder<MemberDefinition> functionsToCopy = ImmutableList.builder();
 
     for (Node keyNode : behaviorObjLit.children()) {
@@ -158,7 +167,7 @@ final class PolymerBehaviorExtractor {
    *     should still be copied to the element prototype.
    */
   private static ImmutableList<MemberDefinition> getNonPropertyMembersToCopy(Node behaviorObjLit) {
-    Preconditions.checkState(behaviorObjLit.isObjectLit());
+    checkState(behaviorObjLit.isObjectLit());
     ImmutableList.Builder<MemberDefinition> membersToCopy = ImmutableList.builder();
 
     for (Node keyNode : behaviorObjLit.children()) {

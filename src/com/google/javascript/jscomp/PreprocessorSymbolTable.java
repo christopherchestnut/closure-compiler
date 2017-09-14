@@ -16,16 +16,17 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.common.base.Preconditions;
+import static com.google.common.base.Preconditions.checkNotNull;
+
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Multimap;
 import com.google.javascript.rhino.Node;
 import com.google.javascript.rhino.StaticSymbolTable;
+import com.google.javascript.rhino.TypeI;
 import com.google.javascript.rhino.jstype.JSType;
 import com.google.javascript.rhino.jstype.SimpleReference;
 import com.google.javascript.rhino.jstype.SimpleSlot;
 import com.google.javascript.rhino.jstype.StaticTypedScope;
-
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -56,13 +57,24 @@ final class PreprocessorSymbolTable
   }
 
   @Override
-  public Node getRootNode() { return root; }
+  public Node getRootNode() {
+    return root;
+  }
 
   @Override
-  public JSType getTypeOfThis() { return null; }
+  public JSType getTypeOfThis() {
+    return null;
+  }
 
   @Override
-  public StaticTypedScope<JSType> getParentScope() { return null; }
+  public TypeI getTypeIOfThis() {
+    return null;
+  }
+
+  @Override
+  public StaticTypedScope<JSType> getParentScope() {
+    return null;
+  }
 
   @Override
   public SimpleSlot getSlot(String name) {
@@ -90,8 +102,11 @@ final class PreprocessorSymbolTable
   }
 
   void addReference(Node node) {
-    String name = getQualifiedName(node);
-    Preconditions.checkNotNull(name);
+    addReference(node, getQualifiedName(node));
+  }
+
+  void addReference(Node node, String name) {
+    checkNotNull(name);
 
     if (!symbols.containsKey(name)) {
       symbols.put(name, new SimpleSlot(name, null, true));

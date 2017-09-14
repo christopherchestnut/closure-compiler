@@ -16,9 +16,9 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.truth.Truth.assertThat;
 
-import com.google.common.base.Preconditions;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.Node;
 import junit.framework.TestCase;
@@ -27,7 +27,7 @@ public final class ChangeVerifierTest extends TestCase {
 
   public void testCorrectValidationOfScriptWithChangeAfterFunction() {
     Node script = parse("function A() {} if (0) { A(); }");
-    Preconditions.checkState(script.isScript());
+    checkState(script.isScript());
 
     Compiler compiler = new Compiler();
     compiler.incrementChangeStamp();
@@ -47,7 +47,7 @@ public final class ChangeVerifierTest extends TestCase {
 
   public void testChangeToScriptNotReported() {
     Node script = parse("function A() {} if (0) { A(); }");
-    Preconditions.checkState(script.isScript());
+    checkState(script.isScript());
 
     Compiler compiler = new Compiler();
     compiler.incrementChangeStamp();
@@ -66,6 +66,61 @@ public final class ChangeVerifierTest extends TestCase {
       // TODO(johnlenz): use this when we upgrade Trush:
       //    assertThat(e).hasMessageThat().contains("change scope not marked as changed");
       assertThat(e.getMessage()).contains("changed scope not marked as changed");
+    }
+  }
+
+  public void testDeletedFunction() {
+    Node script = parse("function A() {}");
+
+    checkState(script.isScript());
+
+    Compiler compiler = new Compiler();
+    compiler.incrementChangeStamp();
+    ChangeVerifier verifier = new ChangeVerifier(compiler).snapshot(script);
+
+    // no change
+    verifier.checkRecordedChanges("test1", script);
+
+    // remove the function. report the change in the script but not the function deletion.
+    Node fnNode = script.getFirstChild();
+    fnNode.detach();
+    compiler.reportChangeToChangeScope(script);
+
+    try {
+      verifier.checkRecordedChanges("test2", script);
+      fail("exception expected");
+    } catch (IllegalStateException e) {
+      assertThat(e.getMessage()).contains("deleted scope was not reported");
+    }
+
+    // now try again after reporting the function deletion.
+    compiler.reportFunctionDeleted(fnNode);
+
+    // no longer throws an exception.
+    verifier.checkRecordedChanges("test2", script);
+  }
+
+  public void testNotDeletedFunction() {
+    Node script = parse("function A() {}");
+
+    checkState(script.isScript());
+
+    Compiler compiler = new Compiler();
+    compiler.incrementChangeStamp();
+    ChangeVerifier verifier = new ChangeVerifier(compiler).snapshot(script);
+
+    // no change
+    verifier.checkRecordedChanges("test1", script);
+
+    // mark the function deleted even though it's alive.
+    Node fnNode = script.getFirstChild();
+    compiler.reportFunctionDeleted(fnNode);
+
+    try {
+      verifier.checkRecordedChanges("test2", script);
+      fail("exception expected");
+    } catch (IllegalStateException e) {
+      assertThat(e.getMessage()).contains("existing scope is improperly marked as deleted");
     }
   }
 

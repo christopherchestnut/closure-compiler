@@ -16,8 +16,12 @@
 
 package com.google.javascript.jscomp.newtypes;
 
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.common.base.Preconditions;
 import com.google.javascript.rhino.JSTypeExpression;
+import com.google.javascript.rhino.Node;
 import java.io.Serializable;
 
 /**
@@ -33,12 +37,14 @@ public final class Typedef implements Serializable {
     RESOLVED
   }
 
+  private final Node defSite;
   private State state;
   private JSTypeExpression typeExpr;
   private JSType type;
 
-  private Typedef(JSTypeExpression typeExpr) {
-    Preconditions.checkNotNull(typeExpr);
+  private Typedef(Node defSite, JSTypeExpression typeExpr) {
+    checkState(defSite.isQualifiedName(), defSite);
+    this.defSite = defSite;
     this.state = State.NOT_RESOLVED;
     // Non-null iff the typedef is resolved
     this.type = null;
@@ -46,8 +52,8 @@ public final class Typedef implements Serializable {
     this.typeExpr = typeExpr;
   }
 
-  public static Typedef make(JSTypeExpression typeExpr) {
-    return new Typedef(typeExpr);
+  public static Typedef make(Node defSite, JSTypeExpression typeExpr) {
+    return new Typedef(defSite, typeExpr);
   }
 
   public boolean isResolved() {
@@ -55,13 +61,13 @@ public final class Typedef implements Serializable {
   }
 
   public JSType getType() {
-    Preconditions.checkState(state == State.RESOLVED);
+    checkState(state == State.RESOLVED);
     return type;
   }
 
   // Returns null iff there is a typedef cycle
   public JSTypeExpression getTypeExpr() {
-    Preconditions.checkState(state != State.RESOLVED);
+    checkState(state != State.RESOLVED);
     if (state == State.DURING_RESOLUTION) {
       return null;
     }
@@ -70,12 +76,12 @@ public final class Typedef implements Serializable {
   }
 
   public JSTypeExpression getTypeExprForErrorReporting() {
-    Preconditions.checkState(state == State.DURING_RESOLUTION);
+    checkState(state == State.DURING_RESOLUTION);
     return typeExpr;
   }
 
   void resolveTypedef(JSType t) {
-    Preconditions.checkNotNull(t);
+    checkNotNull(t);
     if (state == State.RESOLVED) {
       return;
     }
@@ -84,5 +90,10 @@ public final class Typedef implements Serializable {
     state = State.RESOLVED;
     typeExpr = null;
     type = t;
+  }
+
+  @Override
+  public String toString() {
+    return this.defSite.getQualifiedName();
   }
 }

@@ -16,9 +16,11 @@
 
 package com.google.javascript.jscomp;
 
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
 import com.google.javascript.jscomp.CompilerOptions.TracerMode;
 import com.google.javascript.jscomp.parsing.parser.util.format.SimpleFormat;
@@ -46,7 +48,6 @@ public final class PerformanceTracker {
 
   private final PrintStream output;
 
-  private final Node jsRoot;
   private final Node externsRoot;
 
   private final TracerMode mode;
@@ -54,6 +55,8 @@ public final class PerformanceTracker {
   // Keeps track of AST changes and computes code size estimation
   // if there is any.
   private final RecentChange codeChange = new RecentChange();
+
+  private Node jsRoot;
 
   private int initAstSize = DEFAULT_WHEN_SIZE_UNTRACKED;
   private int initCodeSize = DEFAULT_WHEN_SIZE_UNTRACKED;
@@ -93,8 +96,7 @@ public final class PerformanceTracker {
   private final List<Stats> log = new ArrayList<>();
 
   PerformanceTracker(Node externsRoot, Node jsRoot, TracerMode mode, PrintStream printStream) {
-    Preconditions.checkArgument(mode != TracerMode.OFF,
-        "PerformanceTracker can't work without tracer data.");
+    checkArgument(mode != TracerMode.OFF, "PerformanceTracker can't work without tracer data.");
     this.startTime = System.currentTimeMillis();
     this.externsRoot = externsRoot;
     this.jsRoot = jsRoot;
@@ -117,6 +119,28 @@ public final class PerformanceTracker {
   }
 
   /**
+   * Updates the saved jsRoot and resets the size tracking fields accordingly.
+   * @param jsRoot
+   */
+  void updateAfterDeserialize(Node jsRoot) {
+    // TODO(bradfordcsmith): Restore line counts for inputs and externs.
+    this.jsRoot = jsRoot;
+    if (!tracksAstSize()) {
+      return;
+    }
+    this.initAstSize = this.astSize = NodeUtil.countAstSize(this.jsRoot);
+    if (!tracksSize()) {
+      return;
+    }
+    PerformanceTrackerCodeSizeEstimator estimator =
+        PerformanceTrackerCodeSizeEstimator.estimate(this.jsRoot, tracksGzSize());
+    this.initCodeSize = this.codeSize = estimator.getCodeSize();
+    if (tracksGzSize()) {
+      this.initGzCodeSize = this.gzCodeSize = estimator.getZippedCodeSize();
+    }
+  }
+
+  /**
    * Collects information about a pass P after P finishes running, eg, how much
    * time P took and what was its impact on code size.
    *
@@ -126,7 +150,7 @@ public final class PerformanceTracker {
   void recordPassStop(String passName, long runtime) {
     int allocMem = getAllocatedMegabytes();
     Stats logStats = this.currentPass.pop();
-    Preconditions.checkState(passName.equals(logStats.pass));
+    checkState(passName.equals(logStats.pass));
     this.log.add(logStats);
 
     // Update fields that aren't related to code size
@@ -136,7 +160,7 @@ public final class PerformanceTracker {
     if (this.codeChange.hasCodeChanged()) {
       logStats.changes = 1;
     }
-    if (passName.equals(Compiler.PARSING_PASS_NAME)) {
+    if (passName.equals(PassNames.PARSE_INPUTS)) {
       recordParsingStop(logStats);
     } else if (this.codeChange.hasCodeChanged() && tracksAstSize()) {
       recordOtherPassStop(logStats);
@@ -192,7 +216,7 @@ public final class PerformanceTracker {
   }
 
   private int estimateLines(Node n) {
-    Preconditions.checkState(n.isScript());
+    checkState(n.isScript());
     StaticSourceFile ssf = n.getStaticSourceFile();
     if (ssf instanceof SourceFile) {
       return ((SourceFile) ssf).getNumLines();
@@ -293,10 +317,9 @@ public final class PerformanceTracker {
       this.diff += stats.diff;
       this.gzDiff += stats.gzDiff;
     }
-    Preconditions.checkState(!tracksAstSize() || this.initAstSize == this.astDiff + this.astSize);
-    Preconditions.checkState(!tracksSize() || this.initCodeSize == this.diff + this.codeSize);
-    Preconditions.checkState(
-        !tracksGzSize() || this.initGzCodeSize == this.gzDiff + this.gzCodeSize);
+    checkState(!tracksAstSize() || this.initAstSize == this.astDiff + this.astSize);
+    checkState(!tracksSize() || this.initCodeSize == this.diff + this.codeSize);
+    checkState(!tracksGzSize() || this.initGzCodeSize == this.gzDiff + this.gzCodeSize);
   }
 
   private void populateSummary() {

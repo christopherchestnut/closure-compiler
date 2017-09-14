@@ -16,13 +16,14 @@
 
 package com.google.javascript.jscomp.graph;
 
-import com.google.common.base.Preconditions;
+import static com.google.common.base.Preconditions.checkNotNull;
+
 import com.google.common.base.Predicate;
 import com.google.common.base.Predicates;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -39,7 +40,7 @@ import java.util.Map;
  */
 public class LinkedDirectedGraph<N, E>
     extends DiGraph<N, E> implements GraphvizGraph {
-  protected final Map<N, LinkedDirectedGraphNode<N, E>> nodes = new HashMap<>();
+  protected final Map<N, LinkedDirectedGraphNode<N, E>> nodes = new LinkedHashMap<>();
 
   @Override
   public SubGraph<N, E> newSubGraph() {
@@ -283,7 +284,7 @@ public class LinkedDirectedGraph<N, E>
   @Override
   public List<DiGraphNode<N, E>> getDirectedPredNodes(
       DiGraphNode<N, E> dNode) {
-    Preconditions.checkNotNull(dNode);
+    checkNotNull(dNode);
     List<DiGraphNode<N, E>> nodeList =
         new ArrayList<>(dNode.getInEdges().size());
     for (DiGraphEdge<N, E> edge : dNode.getInEdges()) {
@@ -295,7 +296,7 @@ public class LinkedDirectedGraph<N, E>
   @Override
   public List<DiGraphNode<N, E>> getDirectedSuccNodes(
       DiGraphNode<N, E> dNode) {
-    Preconditions.checkNotNull(dNode);
+    checkNotNull(dNode);
     List<DiGraphNode<N, E>> nodeList =
         new ArrayList<>(dNode.getOutEdges().size());
     for (DiGraphEdge<N, E> edge : dNode.getOutEdges()) {

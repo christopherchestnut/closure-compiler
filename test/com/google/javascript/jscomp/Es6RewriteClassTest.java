@@ -20,10 +20,12 @@ import static com.google.javascript.jscomp.Es6ConvertSuper.INVALID_SUPER_CALL;
 import static com.google.javascript.jscomp.Es6RewriteClass.CLASS_REASSIGNMENT;
 import static com.google.javascript.jscomp.Es6RewriteClass.CONFLICTING_GETTER_SETTER_TYPE;
 import static com.google.javascript.jscomp.Es6RewriteClass.DYNAMIC_EXTENDS_TYPE;
-import static com.google.javascript.jscomp.Es6ToEs3Converter.CANNOT_CONVERT;
-import static com.google.javascript.jscomp.Es6ToEs3Converter.CANNOT_CONVERT_YET;
+import static com.google.javascript.jscomp.Es6ToEs3Util.CANNOT_CONVERT;
+import static com.google.javascript.jscomp.Es6ToEs3Util.CANNOT_CONVERT_YET;
+import static com.google.javascript.jscomp.parsing.parser.FeatureSet.ES6_MODULES;
 
 import com.google.javascript.jscomp.CompilerOptions.LanguageMode;
+import com.google.javascript.jscomp.parsing.parser.FeatureSet;
 
 public final class Es6RewriteClassTest extends CompilerTestCase {
 
@@ -65,10 +67,11 @@ public final class Es6RewriteClassTest extends CompilerTestCase {
   }
 
   @Override
-  public void setUp() {
+  protected void setUp() throws Exception {
+    super.setUp();
     setAcceptedLanguage(LanguageMode.ECMASCRIPT_2015);
     setLanguageOut(LanguageMode.ECMASCRIPT3);
-    runTypeCheckAfterProcessing = true;
+    enableRunTypeCheckAfterProcessing();
   }
 
   protected final PassFactory makePassFactory(
@@ -77,6 +80,11 @@ public final class Es6RewriteClassTest extends CompilerTestCase {
       @Override
       protected CompilerPass create(AbstractCompiler compiler) {
         return pass;
+      }
+
+      @Override
+      protected FeatureSet featureSet() {
+        return ES6_MODULES;
       }
     };
   }
@@ -249,6 +257,103 @@ public final class Es6RewriteClassTest extends CompilerTestCase {
             " * @return {Y}",
             " */",
             "Converter.prototype.convert = function(x) {};"));
+  }
+
+  public void testNoTypeForParam() {
+    setLanguageOut(LanguageMode.ECMASCRIPT5);
+
+    test(
+        LINE_JOINER.join(
+          "class MdMenu {",
+          "  /**",
+          "   * @param c",
+          "   */",
+          "  set classList(c) {}",
+          "}"),
+        LINE_JOINER.join(
+            "/** @constructor @struct */",
+            "let MdMenu=function(){};",
+            "/**",
+            " * @type {?}",
+            " */",
+            "MdMenu.prototype.classList;",
+            "$jscomp.global.Object.defineProperties(",
+            "    MdMenu.prototype,",
+            "    {",
+            "      classList: {",
+            "        configurable:true,",
+            "        enumerable:true,",
+            "        /**",
+            "         * @this {MdMenu}",
+            "         * @param c",
+            "         */",
+            "        set:function(c){}",
+            "      }",
+            "    })"
+        ));
+  }
+
+  public void testParamNameMismatch() {
+    setLanguageOut(LanguageMode.ECMASCRIPT5);
+
+    test(
+        LINE_JOINER.join(
+            "class MdMenu {",
+            "/**",
+            "* @param {boolean} classes",
+            "*/",
+            "set classList(c) {}",
+            "}"),
+        LINE_JOINER.join(
+            "/** @constructor @struct */",
+            "let MdMenu=function(){};",
+            " /**",
+            "  * @type {boolean}",
+            "  */",
+            "MdMenu.prototype.classList;",
+            "$jscomp.global.Object.defineProperties(",
+            "    MdMenu.prototype,",
+            "    {",
+            "      classList: {",
+            "        configurable:true,",
+            "        enumerable:true,",
+            "       /**",
+            "        * @this {MdMenu}",
+            "        * @param {boolean} classes",
+            "        */",
+            "       set:function(c){}",
+            "     }",
+            "   })"
+        ));
+  }
+
+  public void testParamNameMismatchAndNoParamType() {
+    setLanguageOut(LanguageMode.ECMASCRIPT5);
+
+    test(
+        LINE_JOINER.join(
+            "class MdMenu {", "/**", "* @param classes", "*/", "set classList(c) {}", "}"),
+        LINE_JOINER.join(
+            "/** @constructor @struct */",
+            "let MdMenu=function(){};",
+            "/**",
+            " * @type {?}",
+            " */",
+            "MdMenu.prototype.classList;",
+            "$jscomp.global.Object.defineProperties(",
+            "    MdMenu.prototype,",
+            "    {",
+            "      classList: {",
+            "        configurable:true,",
+            "        enumerable:true,",
+            "        /**",
+            "         * @this {MdMenu}",
+            "         * @param  classes",
+            "         */",
+            "        set:function(c){}",
+            "      }",
+            "   })"
+        ));
   }
 
   public void testRecordWithJsDoc() {
@@ -920,7 +1025,7 @@ public final class Es6RewriteClassTest extends CompilerTestCase {
   }
 
   public void testComputedSuper() {
-    testError(
+    test(
         LINE_JOINER.join(
             "class Foo {",
             "  ['m']() { return 1; }",
@@ -931,7 +1036,14 @@ public final class Es6RewriteClassTest extends CompilerTestCase {
             "    return super['m']() + 1;",
             "  }",
             "}"),
-        CANNOT_CONVERT_YET);
+        LINE_JOINER.join(
+            "/** @constructor @struct */",
+            "let Foo = function() {};",
+            "Foo.prototype['m'] = function() { return 1; };",
+            "/** @constructor @struct @extends {Foo} @param {...?} var_args */",
+            "let Bar = function(var_args) { Foo.apply(this, arguments); };",
+            "$jscomp.inherits(Bar, Foo);",
+            "Bar.prototype['m'] = function () { return Foo.prototype['m'].call(this) + 1; };"));
   }
 
   public void testSuperMethodInGetter() {
@@ -1163,28 +1275,145 @@ public final class Es6RewriteClassTest extends CompilerTestCase {
   }
 
   public void testSuperGet() {
-    testError("class D {} class C extends D { f() {var i = super.c;} }",
-              CANNOT_CONVERT_YET);
+    test(
+        "class D { d() {} } class C extends D { f() {var i = super.d;} }",
+        LINE_JOINER.join(
+            "/** @constructor @struct */",
+            "let D = function() {};",
+            "D.prototype.d = function() {};",
+            "/**",
+            " * @constructor @struct",
+            " * @param {...?} var_args",
+            " * @extends{D} */",
+            "let C = function(var_args) {",
+            "  D.apply(this, arguments); ",
+            "};",
+            "$jscomp.inherits(C, D);",
+            "C.prototype.f = function() {",
+            "  var i = D.prototype.d;",
+            "};"));
 
-    testError("class D {} class C extends D { static f() {var i = super.c;} }",
-              CANNOT_CONVERT_YET);
+    test(
+        "class D { ['d']() {} } class C extends D { f() {var i = super['d'];} }",
+        LINE_JOINER.join(
+            "/** @constructor @struct */",
+            "let D = function() {};",
+            "D.prototype['d'] = function() {};",
+            "/**",
+            " * @constructor @struct",
+            " * @param {...?} var_args",
+            " * @extends{D} */",
+            "let C = function(var_args) {",
+            "  D.apply(this, arguments); ",
+            "};",
+            "$jscomp.inherits(C, D);",
+            "C.prototype.f = function() {",
+            "  var i = D.prototype['d'];",
+            "};"));
 
-    testError("class D {} class C extends D { f() {var i; i = super[s];} }",
-              CANNOT_CONVERT_YET);
+    test(
+        "class D { d() {}} class C extends D { static f() {var i = super.d;} }",
+        LINE_JOINER.join(
+            "/** @constructor @struct */",
+            "let D = function() {};",
+            "D.prototype.d = function() {};",
+            "/**",
+            " * @constructor @struct",
+            " * @param {...?} var_args",
+            " * @extends{D} */",
+            "let C = function(var_args) {",
+            "  D.apply(this, arguments); ",
+            "};",
+            "$jscomp.inherits(C, D);",
+            "C.f = function() {",
+            "  var i = D.d;",
+            "};"));
 
-    testError("class D {} class C extends D { f() {return super.s;} }",
-              CANNOT_CONVERT_YET);
+    test(
+        "class D { ['d']() {}} class C extends D { static f() {var i = super['d'];} }",
+        LINE_JOINER.join(
+            "/** @constructor @struct */",
+            "let D = function() {};",
+            "D.prototype['d'] = function() {};",
+            "/**",
+            " * @constructor @struct",
+            " * @param {...?} var_args",
+            " * @extends{D} */",
+            "let C = function(var_args) {",
+            "  D.apply(this, arguments); ",
+            "};",
+            "$jscomp.inherits(C, D);",
+            "C.f = function() {",
+            "  var i = D['d'];",
+            "};"));
 
-    testError("class D {} class C extends D { f() {m(super.s);} }",
-              CANNOT_CONVERT_YET);
+    test(
+        "class D {} class C extends D { f() {return super.s;} }",
+        LINE_JOINER.join(
+            "/** @constructor @struct */",
+            "let D = function() {};",
+            "/**",
+            " * @constructor @struct",
+            " * @param {...?} var_args",
+            " * @extends{D} */",
+            "let C = function(var_args) {",
+            "  D.apply(this, arguments); ",
+            "};",
+            "$jscomp.inherits(C, D);",
+            "C.prototype.f = function() {",
+            "  return D.prototype.s;",
+            "};"));
 
-    testError(
-        "class D {} class C extends D { foo() { return super.m.foo(); } }",
-        CANNOT_CONVERT_YET);
+    test(
+        "class D {} class C extends D { f() { m(super.s);} }",
+        LINE_JOINER.join(
+            "/** @constructor @struct */",
+            "let D = function() {};",
+            "/**",
+            " * @constructor @struct",
+            " * @param {...?} var_args",
+            " * @extends{D} */",
+            "let C = function(var_args) {",
+            "  D.apply(this, arguments); ",
+            "};",
+            "$jscomp.inherits(C, D);",
+            "C.prototype.f = function() {",
+            "  m(D.prototype.s);",
+            "};"));
 
-    testError(
-        "class D {} class C extends D { static foo() { return super.m.foo(); } }",
-        CANNOT_CONVERT_YET);
+    test(
+        "class D {} class C extends D { foo() { return super.m.foo();} }",
+        LINE_JOINER.join(
+            "/** @constructor @struct */",
+            "let D = function() {};",
+            "/**",
+            " * @constructor @struct",
+            " * @param {...?} var_args",
+            " * @extends{D} */",
+            "let C = function(var_args) {",
+            "  D.apply(this, arguments); ",
+            "};",
+            "$jscomp.inherits(C, D);",
+            "C.prototype.foo = function() {",
+            "  return D.prototype.m.foo();",
+            "};"));
+
+    test(
+        "class D {} class C extends D { static foo() { return super.m.foo();} }",
+        LINE_JOINER.join(
+            "/** @constructor @struct */",
+            "let D = function() {};",
+            "/**",
+            " * @constructor @struct",
+            " * @param {...?} var_args",
+            " * @extends{D} */",
+            "let C = function(var_args) {",
+            "  D.apply(this, arguments); ",
+            "};",
+            "$jscomp.inherits(C, D);",
+            "C.foo = function() {",
+            "  return D.m.foo();",
+            "};"));
   }
 
   public void testSuperNew() {
@@ -1304,9 +1533,7 @@ public final class Es6RewriteClassTest extends CompilerTestCase {
             "let CodeClass = function(var_args) {",
             "  return ExternsClass.apply(this,arguments) || this;",
             "};",
-            "$jscomp.inherits(CodeClass,ExternsClass)"),
-        null,
-        null);
+            "$jscomp.inherits(CodeClass,ExternsClass)"));
   }
 
   public void testMockingInFunction() {
@@ -1706,9 +1933,15 @@ public final class Es6RewriteClassTest extends CompilerTestCase {
             "    [foo]: {",
             "      configurable:true,",
             "      enumerable:true,",
-            "      /** @this {C} */",
+            "      /**",
+            "       * @this {C}",
+            "       * @return {boolean}",
+            "       */",
             "      get: function() {},",
-            "      /** @this {C} */",
+            "      /**",
+            "       * @this {C}",
+            "       * @param {boolean} val",
+            "       */",
             "      set: function(val) {},",
             "    },",
             "  });"));
@@ -1741,13 +1974,39 @@ public final class Es6RewriteClassTest extends CompilerTestCase {
             "C[foo] = function() { alert(2); };"));
   }
 
+  public void testComputedPropGeneratorMethods() {
+    test(
+        "class C { *[foo]() { yield 1; } }",
+        LINE_JOINER.join(
+            "/** @constructor @struct */",
+            "let C = function() {};",
+            "C.prototype[foo] = function*() { yield 1; };"));
+
+    test(
+        "class C { static *[foo]() { yield 2; } }",
+        LINE_JOINER.join(
+            "/** @constructor @struct */",
+            "let C = function() {};",
+            "C[foo] = function*() { yield 2; };"));
+  }
+
+  public void testClassGenerator() {
+    test(
+        "class C { *foo() { yield 1; } }",
+        LINE_JOINER.join(
+            "/** @constructor @struct */",
+            "let C = function() {};",
+            "C.prototype.foo = function*() { yield 1;};"));
+    assertThat(getLastCompiler().injected).isEmpty();
+  }
+
   @Override
   protected Compiler createCompiler() {
     return new NoninjectingCompiler();
   }
 
   @Override
-  NoninjectingCompiler getLastCompiler() {
+  protected NoninjectingCompiler getLastCompiler() {
     return (NoninjectingCompiler) super.getLastCompiler();
   }
 }

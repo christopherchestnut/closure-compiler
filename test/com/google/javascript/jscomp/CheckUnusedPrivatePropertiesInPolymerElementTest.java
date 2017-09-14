@@ -16,15 +16,13 @@
 
 package com.google.javascript.jscomp;
 
-import com.google.javascript.jscomp.CompilerOptions.LanguageMode;
 import com.google.javascript.rhino.Node;
 
 /**
  * Checks that references to properties in strings, in Polymer elements, are counted as usages of
  * those properties.
  */
-public final class CheckUnusedPrivatePropertiesInPolymerElementTest
-    extends TypeICompilerTestCase {
+public final class CheckUnusedPrivatePropertiesInPolymerElementTest extends TypeICompilerTestCase {
 
   private static final String EXTERNS = LINE_JOINER.join(
       DEFAULT_EXTERNS,
@@ -34,13 +32,13 @@ public final class CheckUnusedPrivatePropertiesInPolymerElementTest
 
   public CheckUnusedPrivatePropertiesInPolymerElementTest() {
     super(EXTERNS);
-    enableGatherExternProperties();
-    setAcceptedLanguage(LanguageMode.ECMASCRIPT_NEXT);
   }
 
   @Override
   protected void setUp() throws Exception {
     super.setUp();
+    enableGatherExternProperties();
+    enableTranspile();
   }
 
   @Override
@@ -48,7 +46,7 @@ public final class CheckUnusedPrivatePropertiesInPolymerElementTest
     return new CompilerPass() {
       @Override
       public void process(Node externs, Node root) {
-        new PolymerPass(compiler).process(externs, root);
+        new PolymerPass(compiler, 1, true).process(externs, root);
         new CheckUnusedPrivateProperties(compiler).process(externs, root);
       }
     };
@@ -71,7 +69,7 @@ public final class CheckUnusedPrivatePropertiesInPolymerElementTest
   }
 
   public void testPolymerPropertyUsedAsObserver1() {
-    allowExternsChanges(true);
+    allowExternsChanges();
     testNoWarning(
         LINE_JOINER.join(
             "Polymer({",
@@ -89,7 +87,7 @@ public final class CheckUnusedPrivatePropertiesInPolymerElementTest
   }
 
   public void testPolymerPropertyUsedAsObserver2() {
-    allowExternsChanges(true);
+    allowExternsChanges();
     testNoWarning(
         LINE_JOINER.join(
             "Polymer({",
@@ -107,7 +105,7 @@ public final class CheckUnusedPrivatePropertiesInPolymerElementTest
   }
 
   public void testBehaviorPropertyUsedAsObserver() {
-    allowExternsChanges(true);
+    allowExternsChanges();
     test(
         new String[] {
             LINE_JOINER.join(

@@ -50,11 +50,11 @@ public final class SymbolTableTest extends TestCase {
   private CompilerOptions options;
 
   @Override
-  public void setUp() throws Exception {
+  protected void setUp() throws Exception {
     super.setUp();
 
     options = new CompilerOptions();
-    options.setLanguageIn(LanguageMode.ECMASCRIPT_NEXT);
+    options.setLanguageIn(LanguageMode.ECMASCRIPT_2017);
     options.setLanguageOut(LanguageMode.ECMASCRIPT5);
     options.setCodingConvention(new ClosureCodingConvention());
     CompilationLevel.SIMPLE_OPTIMIZATIONS.setOptionsForCompilationLevel(
@@ -189,6 +189,7 @@ public final class SymbolTableTest extends TestCase {
     assertThat(refs).hasSize(2);
   }
 
+  // No 'this' reference is created for empty functions.
   public void testLocalThisReferences3() throws Exception {
     SymbolTable table = createSymbolTable(
         "/** @constructor */ function F() {}");
@@ -197,10 +198,7 @@ public final class SymbolTableTest extends TestCase {
     assertNotNull(baz);
 
     Symbol t = table.getParameterInFunction(baz, "this");
-    assertNotNull(t);
-
-    List<Reference> refs = table.getReferenceList(t);
-    assertThat(refs).isEmpty();
+    assertNull(t);
   }
 
   public void testNamespacedReferences() throws Exception {
@@ -859,9 +857,9 @@ public final class SymbolTableTest extends TestCase {
     assertNotNull(abc);
     assertThat(table.getReferenceList(abc)).hasSize(1);
 
-    assertEquals("{b: {c: function (): undefined}}", a.getType().toString());
-    assertEquals("{c: function (): undefined}", ab.getType().toString());
-    assertEquals("function (): undefined", abc.getType().toString());
+    assertEquals("{b: {c: function(): undefined}}", a.getType().toString());
+    assertEquals("{c: function(): undefined}", ab.getType().toString());
+    assertEquals("function(): undefined", abc.getType().toString());
   }
 
   public void testMethodInAnonObject2() throws Exception {
@@ -874,9 +872,9 @@ public final class SymbolTableTest extends TestCase {
     assertNotNull(abc);
     assertThat(table.getReferenceList(abc)).hasSize(1);
 
-    assertEquals("{b: {c: function (): undefined}}", a.getType().toString());
-    assertEquals("{c: function (): undefined}", ab.getType().toString());
-    assertEquals("function (): undefined", abc.getType().toString());
+    assertEquals("{b: {c: function(): undefined}}", a.getType().toString());
+    assertEquals("{c: function(): undefined}", ab.getType().toString());
+    assertEquals("function(): undefined", abc.getType().toString());
   }
 
   public void testJSDocOnlySymbol() throws Exception {

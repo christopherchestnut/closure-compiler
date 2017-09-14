@@ -15,8 +15,10 @@
  */
 package com.google.javascript.jscomp;
 
-import static com.google.javascript.jscomp.Es6ToEs3Converter.CANNOT_CONVERT;
-import static com.google.javascript.jscomp.Es6ToEs3Converter.CANNOT_CONVERT_YET;
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
+import static com.google.javascript.jscomp.Es6ToEs3Util.CANNOT_CONVERT;
+import static com.google.javascript.jscomp.Es6ToEs3Util.CANNOT_CONVERT_YET;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
@@ -189,8 +191,7 @@ public final class Es6RewriteClass implements NodeTraversal.Callback, HotSwapCom
       metadata.insertNodeAndAdvance(definePropsCall);
     }
 
-
-    Preconditions.checkNotNull(constructor);
+    checkNotNull(constructor);
 
     JSDocInfo classJSDoc = NodeUtil.getBestJSDocInfo(classNode);
     JSDocInfoBuilder newInfo = JSDocInfoBuilder.maybeCopyFrom(classJSDoc);
@@ -213,7 +214,7 @@ public final class Es6RewriteClass implements NodeTraversal.Callback, HotSwapCom
           Node inheritsCall = IR.exprResult(inherits);
           compiler.ensureLibraryInjected("es6/util/inherits", false);
 
-          inheritsCall.useSourceInfoIfMissingFromForTree(classNode);
+          inheritsCall.useSourceInfoIfMissingFromForTree(metadata.superClassNameNode);
           enclosingStatement.getParent().addChildAfter(inheritsCall, enclosingStatement);
         }
         newInfo.recordBaseType(new JSTypeExpression(new Node(Token.BANG,
@@ -234,6 +235,7 @@ public final class Es6RewriteClass implements NodeTraversal.Callback, HotSwapCom
     } else {
       parent.replaceChild(classNode, constructor);
     }
+    NodeUtil.markFunctionsDeleted(classNode, compiler);
 
     if (NodeUtil.isStatement(constructor)) {
       constructor.setJSDocInfo(newInfo.build());
@@ -318,7 +320,11 @@ public final class Es6RewriteClass implements NodeTraversal.Callback, HotSwapCom
       } else {
         Set<String> paramNames = info.getParameterNames();
         if (paramNames.size() == 1) {
-          return info.getParameterType(Iterables.getOnlyElement(info.getParameterNames()));
+          JSTypeExpression paramType =
+              info.getParameterType(Iterables.getOnlyElement(info.getParameterNames()));
+          if (paramType != null) {
+            return paramType;
+          }
         }
       }
     }
@@ -386,15 +392,16 @@ public final class Es6RewriteClass implements NodeTraversal.Callback, HotSwapCom
     Map<String, JSDocInfo> membersToDeclare;
     String memberName;
     if (member.isComputedProp()) {
-      Preconditions.checkState(!member.isStaticMember());
+      checkState(!member.isStaticMember());
       membersToDeclare = metadata.prototypeComputedPropsToDeclare;
       memberName = member.getFirstChild().getQualifiedName();
     } else {
-      membersToDeclare = member.isStaticMember()
-          ? metadata.classMembersToDeclare
-          : metadata.prototypeMembersToDeclare;
+      membersToDeclare =
+          member.isStaticMember()
+              ? metadata.classMembersToDeclare
+              : metadata.prototypeMembersToDeclare;
       memberName = member.getString();
-    }
+      }
     JSDocInfo existingJSDoc = membersToDeclare.get(memberName);
     JSTypeExpression existingType = existingJSDoc == null ? null : existingJSDoc.getType();
     if (existingType != null && !existingType.equals(typeExpr)) {
@@ -410,7 +417,7 @@ public final class Es6RewriteClass implements NodeTraversal.Callback, HotSwapCom
         jsDoc.recordNoCollapse();
       }
       membersToDeclare.put(memberName, jsDoc.build());
-    }
+      }
   }
 
   /**
@@ -610,6 +617,9 @@ public final class Es6RewriteClass implements NodeTraversal.Callback, HotSwapCom
         }
         return new ClassDeclarationMetadata(parent.getParent(), fullClassName, true, classNameNode,
             superClassNameNode);
+      } else if (parent.isExport()) {
+        return new ClassDeclarationMetadata(
+            classNode, classNameNode.getString(), false, classNameNode, superClassNameNode);
       } else if (parent.isName()) {
         // Add members after the 'var' statement.
         // var C = class {}; C.prototype.foo = function() {};

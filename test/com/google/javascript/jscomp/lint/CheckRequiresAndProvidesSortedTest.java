@@ -37,7 +37,8 @@ public final class CheckRequiresAndProvidesSortedTest extends CompilerTestCase {
   }
 
   @Override
-  public void setUp() {
+  protected void setUp() throws Exception {
+    super.setUp();
     setAcceptedLanguage(LanguageMode.ECMASCRIPT_2017);
   }
 
@@ -128,6 +129,27 @@ public final class CheckRequiresAndProvidesSortedTest extends CompilerTestCase {
         REQUIRES_NOT_SORTED);
   }
 
+  public void testGoogModule_emptyDestructuring() {
+    testWarning(
+        LINE_JOINER.join(
+            "goog.module('m');",
+            "",
+            "const {FOO} = goog.require('example.constants');",
+            "const {} = goog.require('just.forthe.side.effects');",
+            "",
+            "alert(1);"),
+        REQUIRES_NOT_SORTED);
+
+    testNoWarning(
+        LINE_JOINER.join(
+            "goog.module('m');",
+            "",
+            "const {} = goog.require('just.forthe.side.effects');",
+            "const {FOO} = goog.require('example.constants');",
+            "",
+            "alert(1);"));
+  }
+
   public void testGoogModule_allThreeStyles() {
     testWarning(
         LINE_JOINER.join(
@@ -180,6 +202,28 @@ public final class CheckRequiresAndProvidesSortedTest extends CompilerTestCase {
         REQUIRES_NOT_SORTED);
   }
 
+  public void testGoogModule_forwardDeclares() {
+    testWarning(
+        LINE_JOINER.join(
+            "goog.module('x');",
+            "",
+            "const s = goog.require('s');",
+            "const f = goog.forwardDeclare('f');",
+            "const r = goog.require('r');"),
+        REQUIRES_NOT_SORTED);
+  }
+
+  public void testForwardDeclares() {
+    testWarning(
+        LINE_JOINER.join(
+            "goog.provide('x');",
+            "",
+            "goog.require('s');",
+            "goog.forwardDeclare('f');",
+            "goog.require('r');"),
+        REQUIRES_NOT_SORTED);
+  }
+
   public void testDuplicate() {
     testWarning(
         LINE_JOINER.join(
@@ -207,5 +251,17 @@ public final class CheckRequiresAndProvidesSortedTest extends CompilerTestCase {
   // Just make sure we don't crash.
   public void testEmptyRequire() {
     testSame("goog.require();");
+  }
+
+  // Compiler doesn't sort ES6 modules yet, because semantics not yet finalized.
+  // Simple test to make sure compiler does not crash.
+  public void testES6Modules() {
+    testSame(
+        LINE_JOINER.join(
+            "import foo from 'bar';",
+            "import bar from 'foo';",
+            "import * as a from 'b';",
+            "import {a, b} from 'c';",
+            "import 'foobar';"));
   }
 }
