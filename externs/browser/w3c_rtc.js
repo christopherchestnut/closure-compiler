@@ -507,10 +507,62 @@ var webkitMediaStream;
 
 
 /**
+ * @typedef {{tone: string}}
+ * @see https://www.w3.org/TR/webrtc/#dom-rtcdtmftonechangeeventinit
+ */
+var RTCDTMFToneChangeEventInit;
+
+
+/**
+ * @param {string} type
+ * @param {!RTCDTMFToneChangeEventInit} eventInitDict
+ * @constructor
+ * @extends {Event}
+ * @see https://www.w3.org/TR/webrtc/#dom-rtcdtmftonechangeevent
+ */
+function RTCDTMFToneChangeEvent(type, eventInitDict) {}
+
+/**
+ * @const {string}
+ */
+RTCDTMFToneChangeEvent.prototype.tone;
+
+
+/**
+ * @interface
+ * @see https://www.w3.org/TR/webrtc/#rtcdtmfsender
+ */
+function RTCDTMFSender() {}
+
+/**
+ * @param {string} tones
+ * @param {number=} opt_duration
+ * @param {number=} opt_interToneGap
+ */
+RTCDTMFSender.prototype.insertDTMF =
+    function(tones, opt_duration, opt_interToneGap) {};
+
+/**
+ * @type {?function(!RTCDTMFToneChangeEvent)}
+ */
+RTCDTMFSender.prototype.ontonechange;
+
+/**
+ * @const {string}
+ */
+RTCDTMFSender.prototype.toneBuffer;
+
+
+/**
  * @interface
  * @see https://www.w3.org/TR/webrtc/#rtcrtpsender-interface
  */
 function RTCRtpSender() {}
+
+/**
+ * @const {!RTCDTMFSender}
+ */
+RTCRtpSender.prototype.dtmf;
 
 /**
  * @const {!MediaStreamTrack}
@@ -1223,12 +1275,23 @@ IceCandidate.prototype.toSdp = function() {};
  */
 IceCandidate.prototype.label;
 
+/** @record */
+function RTCIceCandidateInit() {};
+
+/** @type {?string|undefined} */
+RTCIceCandidateInit.prototype.candidate;
+
+/** @type {(?string|undefined)} */
+RTCIceCandidateInit.prototype.sdpMid;
+
+/** @type {(?number|undefined)} */
+RTCIceCandidateInit.prototype.sdpMLineIndex;
+
+/** @type {(string|undefined)} */
+RTCIceCandidateInit.prototype.usernameFragment;
+
 /**
- * @param {!Object=} candidateInitDict  The RTCIceCandidateInit dictionary.
- * This optional argument may have type
- * {candidate: string, sdpMid: string, sdpMLineIndex:number}, but none of
- * these keys are required to be present, and other keys are ignored, so the
- * closest Closure type is Object.
+ * @param {!RTCIceCandidateInit=} candidateInitDict  The RTCIceCandidateInit dictionary.
  * @constructor
  * @see https://www.w3.org/TR/webrtc/#rtcicecandidate-interface
  */
@@ -1682,40 +1745,40 @@ RTCPeerConnection.prototype.dispatchEvent = function(evt) {};
 /**
  * @param {(!RTCSessionDescriptionCallback|!MediaConstraints)=}
  *    successCallbackOrConstraints
- * @param {!RTCPeerConnectionErrorCallback=} failureCallback
+ * @param {!RTCPeerConnectionErrorCallback=} errorCallback
  * @param {!MediaConstraints=} constraints
  * @return {!Promise<!RTCSessionDescription>|undefined}
  */
 RTCPeerConnection.prototype.createOffer = function(successCallbackOrConstraints,
-    failureCallback, constraints) {};
+    errorCallback, constraints) {};
 
 /**
  * @param {(!RTCSessionDescriptionCallback|!MediaConstraints)=}
  *    successCallbackOrConstraints
- * @param {!RTCPeerConnectionErrorCallback=} failureCallback
+ * @param {!RTCPeerConnectionErrorCallback=} errorCallback
  * @param {!MediaConstraints=} constraints
  * @return {!Promise<!RTCSessionDescription>|undefined}
  */
 RTCPeerConnection.prototype.createAnswer =
-    function(successCallbackOrConstraints, failureCallback, constraints) {};
+    function(successCallbackOrConstraints, errorCallback, constraints) {};
 
 /**
  * @param {!RTCSessionDescription} description
  * @param {!RTCVoidCallback=} successCallback
- * @param {!RTCPeerConnectionErrorCallback=} failureCallback
+ * @param {!RTCPeerConnectionErrorCallback=} errorCallback
  * @return {!Promise<!RTCSessionDescription>|undefined}
  */
 RTCPeerConnection.prototype.setLocalDescription = function(description,
-    successCallback, failureCallback) {};
+    successCallback, errorCallback) {};
 
 /**
  * @param {!RTCSessionDescription} description
  * @param {!RTCVoidCallback=} successCallback
- * @param {!RTCPeerConnectionErrorCallback=} failureCallback
+ * @param {!RTCPeerConnectionErrorCallback=} errorCallback
  * @return {!Promise<!RTCSessionDescription>|undefined}
  */
 RTCPeerConnection.prototype.setRemoteDescription = function(description,
-    successCallback, failureCallback) {};
+    successCallback, errorCallback) {};
 
 /**
  * @type {?RTCSessionDescription}
@@ -1746,10 +1809,10 @@ RTCPeerConnection.prototype.updateIce = function(configuration, constraints) {};
  * Void in Chrome for now, a promise that you can then/catch in Firefox.
  * @param {!RTCIceCandidate} candidate
  * @param {!RTCVoidCallback=} successCallback
- * @param {!function(DOMException)=} failureCallback
+ * @param {!function(DOMException)=} errorCallback
  * @return {!Promise|undefined}
  */
-RTCPeerConnection.prototype.addIceCandidate = function(candidate, successCallback, failureCallback) {};
+RTCPeerConnection.prototype.addIceCandidate = function(candidate, successCallback, errorCallback) {};
 
 /**
  * @type {!RTCIceGatheringState}

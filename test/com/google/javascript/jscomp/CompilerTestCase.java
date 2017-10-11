@@ -314,6 +314,11 @@ public abstract class CompilerTestCase extends TestCase {
           "function Boolean(arg) {}",
           "/** @type {number} */ Array.prototype.length;",
           "/**",
+          " * @param {*} arr",
+          " * @return {boolean}",
+          " */",
+          "Array.isArray = function(arr) {};",
+          "/**",
           " * @param {...T} var_args",
           " * @return {number} The new length of the array.",
           " * @this {IArrayLike<T>}",
@@ -1924,6 +1929,41 @@ public abstract class CompilerTestCase extends TestCase {
         },
         Predicates.<Node>alwaysTrue());
     return matches;
+  }
+
+  /**
+   * Returns a node that defines the given qualified name. The returned node
+   * should have a valid type defined on it, if type checking occurred.  Will
+   * return null if no definition is found.  Only nodes in the top-level script
+   * are traversed.
+   */
+  protected static Node findDefinition(Compiler compiler, String name) {
+    for (Node node = compiler.getJsRoot().getFirstFirstChild();
+         node != null; node = node.getNext()) {
+      switch (node.getToken()) {
+        case FUNCTION:
+          if (name.equals(node.getFirstChild().getString())) {
+            return node;
+          }
+          break;
+        case VAR:
+        case CONST:
+        case LET:
+          if (name.equals(node.getFirstChild().getString())) {
+            return node.getFirstChild();
+          }
+          break;
+        case EXPR_RESULT:
+          if (node.getFirstChild().isAssign()
+              && node.getFirstFirstChild().matchesQualifiedName(name)) {
+            return node.getFirstFirstChild();
+          }
+          break;
+        default:
+          break;
+      }
+    }
+    return null;
   }
 
   /** A Compiler that records requested runtime libraries, rather than injecting. */

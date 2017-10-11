@@ -612,6 +612,27 @@ public class ErrorToFixMapperTest {
   }
 
   @Test
+  public void testSortRequiresInGoogModule_veryLongRequire() {
+    assertChanges(
+        LINE_JOINER.join(
+            "goog.module('m');",
+            "",
+            "const {veryLongDestructuringStatementSoLongThatWeGoPast80CharactersBeforeGettingToTheClosingCurlyBrace} = goog.require('other');",
+            "const shorter = goog.require('shorter');",
+            "",
+            "use(veryLongDestructuringStatementSoLongThatWeGoPast80CharactersBeforeGettingToTheClosingCurlyBrace);",
+            "use(shorter);"),
+        LINE_JOINER.join(
+            "goog.module('m');",
+            "",
+            "const shorter = goog.require('shorter');",
+            "const {veryLongDestructuringStatementSoLongThatWeGoPast80CharactersBeforeGettingToTheClosingCurlyBrace} = goog.require('other');",
+            "",
+            "use(veryLongDestructuringStatementSoLongThatWeGoPast80CharactersBeforeGettingToTheClosingCurlyBrace);",
+            "use(shorter);"));
+  }
+
+  @Test
   public void testSortRequiresAndForwardDeclares() {
     assertChanges(
         LINE_JOINER.join(
@@ -1226,6 +1247,40 @@ public class ErrorToFixMapperTest {
             "var GoogWidget = goog.require('goog.Widget');",
             "",
             "alert(new GoogWidget());"));
+  }
+
+  @Test
+  public void testBug65602711a() {
+    assertChanges(
+        LINE_JOINER.join(
+            "goog.module('x');",
+            "",
+            "const {X} = goog.require('ns.abc.xyz');",
+            "",
+            "use(ns.abc.xyz.X);"),
+        LINE_JOINER.join(
+            "goog.module('x');",
+            "",
+            "const {X} = goog.require('ns.abc.xyz');",
+            "",
+            "use(X);"));
+  }
+
+  @Test
+  public void testBug65602711b() {
+    assertChanges(
+        LINE_JOINER.join(
+            "goog.module('x');",
+            "",
+            "const {X: X2} = goog.require('ns.abc.xyz');",
+            "",
+            "use(ns.abc.xyz.X);"),
+        LINE_JOINER.join(
+            "goog.module('x');",
+            "",
+            "const {X: X2} = goog.require('ns.abc.xyz');",
+            "",
+            "use(X2);"));
   }
 
   @Test

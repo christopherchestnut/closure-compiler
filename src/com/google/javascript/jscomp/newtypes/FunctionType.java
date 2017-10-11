@@ -257,6 +257,20 @@ public final class FunctionType implements Serializable {
             false));
     functions.put("TOP_FUNCTION", new FunctionType(commonTypes, false));
     functions.put("LOOSE_TOP_FUNCTION", new FunctionType(commonTypes, true));
+    functions.put(
+        "U2U_CONSTRUCTOR",
+        FunctionType.normalized(
+            commonTypes,
+            null /* requiredFormals */,
+            null /* optionalFormals */,
+            commonTypes.UNKNOWN /* restFormals */,
+            commonTypes.UNKNOWN /* retType */,
+            commonTypes.UNKNOWN /* nominalType */,
+            null /* receiverType */,
+            null /* outerVars */,
+            null /* typeParameters */,
+            true /* isLoose */,
+            false /* isAbstract */));
     return functions;
   }
 
@@ -1370,9 +1384,10 @@ public final class FunctionType implements Serializable {
 
   /** Returns a new FunctionType with the receiverType promoted to the first argument type. */
   FunctionType devirtualize() {
+    JSType firstArg = receiverType != null ? receiverType : commonTypes.UNKNOWN;
     return new FunctionType(
         commonTypes,
-        ImmutableList.<JSType>builder().add(receiverType).addAll(requiredFormals).build(),
+        ImmutableList.<JSType>builder().add(firstArg).addAll(requiredFormals).build(),
         optionalFormals,
         restFormals,
         returnType,
@@ -1481,12 +1496,14 @@ public final class FunctionType implements Serializable {
 
   @SuppressWarnings("ReferenceEquality")
   public StringBuilder appendTo(StringBuilder builder, ToStringContext ctx) {
-    if (this == this.commonTypes.LOOSE_TOP_FUNCTION) {
+    if (isLoose() && ctx.forAnnotation()) {
+      return builder.append("!Function");
+    } else if (this == this.commonTypes.LOOSE_TOP_FUNCTION) {
       return builder.append("LOOSE_TOP_FUNCTION");
     } else if (this == this.commonTypes.TOP_FUNCTION) {
       return builder.append("TOP_FUNCTION");
     } else if (isQmarkFunction()) {
-      return builder.append(ctx.forAnnotation() ? "!" : "").append("Function");
+      return builder.append(ctx.forAnnotation() ? "!Function" : "Function");
     }
     if (!this.typeParameters.isEmpty()) {
       builder.append("<");

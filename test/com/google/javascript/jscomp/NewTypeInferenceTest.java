@@ -2165,6 +2165,7 @@ public final class NewTypeInferenceTest extends NewTypeInferenceTestBase {
         NewTypeInference.INVALID_ARGUMENT_TYPE);
 
     typeCheck(LINE_JOINER.join(
+        CLOSURE_BASE,
         "/** @constructor */",
         "function Foo() {}",
         "/**",
@@ -2177,11 +2178,13 @@ public final class NewTypeInferenceTest extends NewTypeInferenceTestBase {
         "}"));
 
     typeCheck(LINE_JOINER.join(
+        CLOSURE_BASE,
         "function f(/** { p: (number|null) } */ x) {",
         "  goog.asserts.assertNumber(x.p) - 1;",
         "}"));
 
     typeCheck(LINE_JOINER.join(
+        CLOSURE_BASE,
         "function f(/** function():(number|null) */ x) {",
         "  goog.asserts.assertNumber(x()) - 1;",
         "}"));
@@ -2194,7 +2197,7 @@ public final class NewTypeInferenceTest extends NewTypeInferenceTestBase {
         "function Bar() {}",
         "/** @return {?Foo} */",
         "Bar.prototype.method = function() { return null; };",
-        "var /** !Foo */ x = goog.asserts.assertInstanceOf((new Bar).method(), Foo);"));
+        "var /** !Foo */ x = goog.asserts.assertInstanceof((new Bar).method(), Foo);"));
 
     typeCheck(LINE_JOINER.join(
         CLOSURE_BASE,
@@ -2212,15 +2215,19 @@ public final class NewTypeInferenceTest extends NewTypeInferenceTestBase {
         NewTypeInference.ASSERT_FALSE);
 
     typeCheck(LINE_JOINER.join(
+        CLOSURE_BASE,
         "/** @const */",
         "var ns = {};",
         "goog.forwardDeclare('ns.Foo');",
         "function f(x) {",
         "  return goog.asserts.assertInstanceof(x, ns.Foo);",
         "}"),
-        NewTypeInference.UNKNOWN_ASSERTION_TYPE);
+        NewTypeInference.UNKNOWN_ASSERTION_TYPE,
+        NewTypeInference.INEXISTENT_PROPERTY);
 
-    typeCheck("goog.asserts.assert(false, 'this code should not run');");
+    typeCheck(LINE_JOINER.join(
+        CLOSURE_BASE,
+        "goog.asserts.assert(false, 'this code should not run');"));
 
     // If the type after the assert is the vague truthy type, then there would be no warning here.
     typeCheck(LINE_JOINER.join(
@@ -2240,6 +2247,7 @@ public final class NewTypeInferenceTest extends NewTypeInferenceTestBase {
         NewTypeInference.MISTYPED_ASSIGN_RHS);
 
     typeCheck(LINE_JOINER.join(
+        CLOSURE_BASE,
         "function f(x) {",
         "  goog.asserts.assertInstanceof(x, Array);",
         "}",
@@ -12114,8 +12122,9 @@ public final class NewTypeInferenceTest extends NewTypeInferenceTestBase {
         NewTypeInference.WRONG_ARGUMENT_COUNT,
         NewTypeInference.INVALID_OPERAND_TYPE);
 
-    typeCheck(CLOSURE_BASE
-        + "function f(x) { var /** boolean */ b = goog.isNull(x); }");
+    typeCheck(LINE_JOINER.join(
+        CLOSURE_BASE,
+        "function f(x) { var /** boolean */ b = goog.isNull(x); }"));
   }
 
   public void testIsArrayPredicate() {
@@ -12131,8 +12140,9 @@ public final class NewTypeInferenceTest extends NewTypeInferenceTestBase {
   }
 
   public void testGoogIsPredicatesTrue() {
-    typeCheck(CLOSURE_BASE
-        + "function f(x) { if (goog.isNull(x)) { var /** undefined */ y = x; } }",
+    typeCheck(LINE_JOINER.join(
+        CLOSURE_BASE,
+        "function f(x) { if (goog.isNull(x)) { var /** undefined */ y = x; } }"),
         NewTypeInference.MISTYPED_ASSIGN_RHS);
 
     typeCheck(LINE_JOINER.join(
@@ -12249,6 +12259,7 @@ public final class NewTypeInferenceTest extends NewTypeInferenceTestBase {
         "}"));
 
     typeCheck(LINE_JOINER.join(
+        CLOSURE_BASE,
         "function f(/** !Object */ x) {",
         "  if (goog.isArrayLike(x)) {",
         "    return x.length - 1;",
@@ -12449,8 +12460,9 @@ public final class NewTypeInferenceTest extends NewTypeInferenceTestBase {
         CLOSURE_DEFS + "var o = {x: 'str'}; var q = o.superClass_;",
         NewTypeInference.INEXISTENT_PROPERTY);
 
-    typeCheck(CLOSURE_DEFS
-        + "var o = {superClass_: 'str'}; var /** string */ s = o.superClass_;");
+    typeCheck(LINE_JOINER.join(
+        CLOSURE_DEFS,
+        "var o = {superClass_: 'str'}; var /** string */ s = o.superClass_;"));
   }
 
   public void testAcrossScopeNamespaces() {
@@ -13713,42 +13725,51 @@ public final class NewTypeInferenceTest extends NewTypeInferenceTestBase {
   }
 
   public void testClosureStyleFunctionBind() {
-    typeCheck(
-        "goog.bind(123, null);", NewTypeInference.GOOG_BIND_EXPECTS_FUNCTION);
+    typeCheck(LINE_JOINER.join(
+        CLOSURE_BASE,
+        "goog.bind(123, null);"),
+        NewTypeInference.GOOG_BIND_EXPECTS_FUNCTION);
 
     typeCheck(LINE_JOINER.join(
+        CLOSURE_BASE,
         "function f(x) { return x; }",
         "goog.bind(f, null, 1, 2);"),
         NewTypeInference.WRONG_ARGUMENT_COUNT);
 
     typeCheck(LINE_JOINER.join(
+        CLOSURE_BASE,
         "function f(x) { return x; }",
         "goog.bind(f);"),
         NewTypeInference.WRONG_ARGUMENT_COUNT);
 
     typeCheck(LINE_JOINER.join(
+        CLOSURE_BASE,
         "function f() {}",
         "goog.bind(f, 1);"),
         NewTypeInference.INVALID_THIS_TYPE_IN_BIND);
 
     typeCheck(LINE_JOINER.join(
+        CLOSURE_BASE,
         "function f(/** number */ x, /** number */ y) { return x - y; }",
         "var g = goog.bind(f, null, 123);",
         "g('asdf');"),
         NewTypeInference.INVALID_ARGUMENT_TYPE);
 
     typeCheck(LINE_JOINER.join(
+        CLOSURE_BASE,
         "function f(/** number */ x) { return x - 1; }",
         "var g = goog.partial(f, 'asdf');"),
         NewTypeInference.INVALID_ARGUMENT_TYPE);
 
     typeCheck(LINE_JOINER.join(
+        CLOSURE_BASE,
         "function f(/** number */ x) { return x - 1; }",
         "var g = goog.partial(f, 'asdf');",
         "g() - 3;"),
         NewTypeInference.INVALID_ARGUMENT_TYPE);
 
     typeCheck(LINE_JOINER.join(
+        CLOSURE_BASE,
         "function f(x) {",
         "  if (typeof x == 'function') {",
         "    goog.bind(x, {}, 1, 2);",
@@ -13764,9 +13785,13 @@ public final class NewTypeInferenceTest extends NewTypeInferenceTestBase {
         "goog.bind(function() { this.p - 5; }, new Foo);"),
         NewTypeInference.INVALID_OPERAND_TYPE);
 
-    typeCheck("goog.partial(function(x) {}, 123)");
+    typeCheck(LINE_JOINER.join(
+        CLOSURE_BASE,
+        "goog.partial(function(x) {}, 123)"));
 
-    typeCheck("goog.bind(function() {}, null)();");
+    typeCheck(LINE_JOINER.join(
+        CLOSURE_BASE,
+        "goog.bind(function() {}, null)();"));
   }
 
   public void testPlusBackwardInference() {
@@ -13906,12 +13931,18 @@ public final class NewTypeInferenceTest extends NewTypeInferenceTestBase {
   }
 
   public void testUndefinedFunctionCtorNoCrash() {
-    typeCheckCustomExterns("", "function f(x) {}",
-        GlobalTypeInfoCollector.FUNCTION_CONSTRUCTOR_NOT_DEFINED);
+    typeCheckCustomExterns(
+        "",
+        "function f(x) {}");
 
-    // Test that NTI is not run
-    typeCheckCustomExterns("", "function f(x) { 1 - 'asdf'; }",
-        GlobalTypeInfoCollector.FUNCTION_CONSTRUCTOR_NOT_DEFINED);
+    typeCheckCustomExterns(
+        "",
+        "function f(x) { 1 - 'asdf'; }",
+        NewTypeInference.INVALID_OPERAND_TYPE);
+
+    typeCheckCustomExterns(
+        "",
+        "/** @typedef {!Function} */ var myTypeDef;");
   }
 
   public void testTrickyPropertyJoins() {
@@ -14454,6 +14485,7 @@ public final class NewTypeInferenceTest extends NewTypeInferenceTestBase {
         "}"));
 
     typeCheck(LINE_JOINER.join(
+        CLOSURE_BASE,
         "/** @constructor */",
         "function Foo() {",
         "  /** @type {string} */",
@@ -15510,6 +15542,7 @@ public final class NewTypeInferenceTest extends NewTypeInferenceTestBase {
         NewTypeInference.NULLABLE_DEREFERENCE);
 
     typeCheck(LINE_JOINER.join(
+        CLOSURE_BASE,
         "function f(/** ?Object */ x) {",
         "  var y = x;",
         "  if (goog.isDef(y.prop)) {",
@@ -15974,6 +16007,20 @@ public final class NewTypeInferenceTest extends NewTypeInferenceTestBase {
         "}",
         "var /** string */ s = window.myprop;"),
         NewTypeInference.MISTYPED_ASSIGN_RHS);
+
+    // Window is defined after "var window;", but that's fine.
+    typeCheckCustomExterns(LINE_JOINER.join(
+        "/** @constructor */",
+        "function Object() {}",
+        "/** @constructor */",
+        "function Function(var_args) {}",
+        "/** @type {!Window} */",
+        "var window;",
+        "/** @type {!Window} */",
+        "var notWindow;",
+        "/** @constructor */",
+        "function Window() {}"),
+        "");
   }
 
   public void testInstantiateToTheSuperType() {
@@ -19374,6 +19421,18 @@ public final class NewTypeInferenceTest extends NewTypeInferenceTestBase {
 
     typeCheck(
         LINE_JOINER.join(
+            "/** @struct @constructor @abstract */ var A = function() {};",
+            "/** @abstract */ A.prototype.foo = function() {};",
+            "/** @struct @constructor @extends {A} */ var B = function() {};",
+            "/** @override */ B.prototype.foo = function() {",
+            "  (function() {",
+            "    return A.prototype.foo.call($jscomp$this);",
+            "  })();",
+            "};"),
+        NewTypeInference.ABSTRACT_SUPER_METHOD_NOT_CALLABLE);
+
+    typeCheck(
+        LINE_JOINER.join(
             "/** @struct @constructor */ var A = function() {};",
             "A.prototype.foo = function() {};",
             "/** @struct @constructor @extends {A} */ var B = function() {};",
@@ -19406,6 +19465,88 @@ public final class NewTypeInferenceTest extends NewTypeInferenceTestBase {
             "/** @override */ B.prototype.foo = function() {};",
             "var abstractMethod = A.prototype.foo;",
             "(0, abstractMethod).call(new B);"),
+        NewTypeInference.ABSTRACT_SUPER_METHOD_NOT_CALLABLE);
+  }
+
+  public void testAbstractMethodCallsWithGoogInerhits() {
+    String closureDefs = LINE_JOINER.join(
+        "/** @const */ var goog = {};",
+        "goog.inherits = function(child, parent){};");
+    // Converted from Closure style "goog.base" super call
+    typeCheck(
+        LINE_JOINER.join(
+            closureDefs,
+            "/** @const */ var ns = {};",
+            "/** @constructor @abstract */ ns.A = function() {};",
+            "/** @abstract */ ns.A.prototype.foo = function() {};",
+            "/** @constructor @extends {ns.A} */ ns.B = function() {};",
+            "goog.inherits(ns.B, ns.A);",
+            "/** @override */ ns.B.prototype.foo = function() {",
+            "  ns.B.superClass_.foo.call(this);",
+            "};"),
+        NewTypeInference.ABSTRACT_SUPER_METHOD_NOT_CALLABLE);
+
+    typeCheck(
+        LINE_JOINER.join(
+            closureDefs,
+            "/** @const */ var ns = {};",
+            "/** @constructor @abstract */ ns.A = function() {};",
+            "/** @abstract */ ns.A.prototype.foo = function() {};",
+            "/** @constructor @extends {ns.A} */ ns.B = function() {};",
+            "goog.inherits(ns.B, ns.A);",
+            "/** @override */ ns.B.prototype.foo = function() {",
+            "  ns.B.superClass_.foo.apply(this);",
+            "};"),
+        NewTypeInference.ABSTRACT_SUPER_METHOD_NOT_CALLABLE);
+
+    typeCheck(
+        LINE_JOINER.join(
+            closureDefs,
+            "/** @constructor @abstract */ var A = function() {};",
+            "/** @abstract */",
+            "A.prototype.foo = function() {};",
+            "/** @constructor @extends {A} */ var B = function() {};",
+            "goog.inherits(B, A);",
+            "/** @override */ B.prototype.foo = function() { A.prototype.foo['call'](this); };"),
+        NewTypeInference.ABSTRACT_SUPER_METHOD_NOT_CALLABLE);
+
+    typeCheck(
+        LINE_JOINER.join(
+            closureDefs,
+            "/** @struct @constructor @abstract */ var A = function() {};",
+            "/** @abstract */ A.prototype.foo = function() {};",
+            "/** @struct @constructor @extends {A} */ var B = function() {};",
+            "goog.inherits(B, A);",
+            "/** @override */ B.prototype.foo = function() {",
+            "  (function() {",
+            "    return A.prototype.foo.call($jscomp$this);",
+            "  })();",
+            "};"),
+        NewTypeInference.ABSTRACT_SUPER_METHOD_NOT_CALLABLE);
+
+    typeCheck(
+        LINE_JOINER.join(
+            closureDefs,
+            "/** @struct @constructor */ var A = function() {};",
+            "A.prototype.foo = function() {};",
+            "/** @struct @constructor @extends {A} */ var B = function() {};",
+            "goog.inherits(B, A);",
+            "/** @override */ B.prototype.foo = function() {",
+            "  (function() {",
+            "    return A.prototype.foo.call($jscomp$this);",
+            "  })();",
+            "};"));
+
+    typeCheck(
+        LINE_JOINER.join(
+            closureDefs,
+            "/** @constructor @abstract */ function A() {};",
+            "/** @abstract */ A.prototype.foo = function() {};",
+            "/** @constructor @extends {A} */ function B() {};",
+            "goog.inherits(B, A);",
+            "/** @override */ B.prototype.foo = function() {};",
+            "var abstractMethod = A.prototype.foo;",
+            "abstractMethod.call(new B);"),
         NewTypeInference.ABSTRACT_SUPER_METHOD_NOT_CALLABLE);
   }
 
@@ -21633,5 +21774,98 @@ public final class NewTypeInferenceTest extends NewTypeInferenceTestBase {
         "function f(x, y) {",
         "  x = y;",
         "}"));
+  }
+
+  public void testOutOfOrderExterns() {
+    typeCheckCustomExterns(
+        LINE_JOINER.join(
+            DEFAULT_EXTERNS,
+            "/** @constructor */",
+            "ns.Foo = function() {};",
+            "/** @const */",
+            "var ns = {};"),
+        "var x = new ns.Foo;");
+
+    typeCheckCustomExterns(
+        LINE_JOINER.join(
+            DEFAULT_EXTERNS,
+            "/** @constructor */",
+            "ns.Foo = function() {};",
+            "/** @const */",
+            "var ns = {};"),
+        "var /** number */ n = new ns.Foo;",
+        NewTypeInference.MISTYPED_ASSIGN_RHS);
+
+    // If the root namespace is completely undefined, VarCheck warns. We don't register the type.
+    typeCheckCustomExterns(
+        LINE_JOINER.join(
+            DEFAULT_EXTERNS,
+            "/** @constructor */",
+            "ns.Foo = function() {};"),
+        "var /** number */ n = new ns.Foo;");
+
+    // Subnamespace is not defined. We warn for the missing property and don't register ns.Foo.Bar.
+    typeCheckCustomExterns(
+        LINE_JOINER.join(
+            DEFAULT_EXTERNS,
+            "/** @constructor */",
+            "ns.Foo.Bar = function() {};",
+            "/** @const */",
+            "var ns = {};"),
+        "var /** number */ n = new ns.Foo.Bar;",
+        NewTypeInference.INEXISTENT_PROPERTY);
+  }
+
+  public void testDontCrashOnUnusualExternsDefs() {
+    typeCheckCustomExterns(LINE_JOINER.join(
+        DEFAULT_EXTERNS,
+        "/** @constructor */",
+        "function Foo() {}",
+        "Foo.prototype['myprop'];"),
+        "");
+  }
+
+  public void testPropertiesOnMethods() {
+    typeCheck(
+        LINE_JOINER.join(
+            "/** @constructor */ function Foo() {}",
+            "Foo.prototype.bar = function() {};",
+            "Foo.prototype.bar.baz = 42;",
+            "var /** string */ qux = Foo.prototype.bar.baz;"),
+        NewTypeInference.MISTYPED_ASSIGN_RHS);
+
+    typeCheck(
+        LINE_JOINER.join(
+            "/** @constructor */ function Foo() {}",
+            "Foo.prototype.bar = function() {};",
+            "Foo.prototype.bar.baz = 42;",
+            "var /** string */ qux = new Foo().bar.baz;"),
+        NewTypeInference.MISTYPED_ASSIGN_RHS);
+
+    typeCheck(
+        LINE_JOINER.join(
+            "/** @constructor */ function Foo() {}",
+            "Foo.prototype.bar = function() {};",
+            "Foo.prototype.bar.baz = 42;",
+            "var /** number */ qux = new Foo().bar.baz;"));
+
+    typeCheck(
+        LINE_JOINER.join(
+            "/** @constructor */ function Foo() {}",
+            "Foo.prototype.bar = function() {};",
+            "Foo.prototype.bar.baz;",
+            "var qux = new Foo().bar.baz;"));
+  }
+
+  public void testAliasedNamespaceWithDotInTheName() {
+    typeCheck(LINE_JOINER.join(
+        "/** @const */ var foo = {};",
+        "/** @type {string} */ foo.prop = '';",
+        "/** @const */",
+        "var ns = {",
+        "  'a.b' : foo",
+        "};",
+        "var x = ns['a.b'].prop - 123;"),
+        NewTypeInference.INVALID_OPERAND_TYPE);
   }
 }

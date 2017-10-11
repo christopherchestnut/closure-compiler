@@ -46,7 +46,7 @@ public class Scope implements StaticScope, Serializable {
    * Creates a Scope given the parent Scope and the root node of the current scope.
    *
    * @param parent The parent Scope. Cannot be null.
-   * @param rootNode The root node of the curent scope. Cannot be null.
+   * @param rootNode The root node of the current scope. Cannot be null.
    */
   Scope(Scope parent, Node rootNode) {
     checkNotNull(parent);
@@ -82,6 +82,20 @@ public class Scope implements StaticScope, Serializable {
   /** The depth of the scope. The global scope has depth 0. */
   public int getDepth() {
     return depth;
+  }
+
+  /**
+   * @return True if this scope contains {@code other}, or is the same scope as {@code other}.
+   */
+  boolean contains(Scope other) {
+    Scope s = checkNotNull(other);
+    while (s != null) {
+      if (s == this) {
+        return true;
+      }
+      s = s.getParent();
+    }
+    return false;
   }
 
   /**

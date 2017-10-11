@@ -531,6 +531,18 @@ public final class NameAnalyzerTest extends CompilerTestCase {
     test("class D {} class C extends D {}" , "");
   }
 
+  /** @bug 67430253 */
+  public void testEs6ClassExtendsQualifiedName1() {
+    testSame("var ns = {}; ns.Class1 = class {}; class Class2 extends ns.Class1 {}; use(Class2);");
+  }
+
+  /** @bug 67430253 */
+  public void testEs6ClassExtendsQualifiedName2() {
+    test(
+        "var ns = {}; ns.Class1 = class {}; use(ns.Class1); class Class2 extends ns.Class1 {}",
+        "var ns = {}; ns.Class1 = class {}; use(ns.Class1);");
+  }
+
   public void testAssignmentToThisPrototype() {
     testSame("Function.prototype.inherits = function(parentCtor) {" +
              "  function tempCtor() {};" +
@@ -577,40 +589,30 @@ public final class NameAnalyzerTest extends CompilerTestCase {
   }
 
   public void testInherits1() {
-    test("var a = {}; var b = {}; b.inherits(a)", "");
-  }
-
-  public void testInherits2() {
     test("var a = {}; var b = {}; var goog = {}; goog.inherits(b, a)", "");
   }
 
-  public void testInherits3() {
+  public void testInherits2() {
     testSame("var a = {}; this.b = {}; b.inherits(a);");
   }
 
-  public void testInherits4() {
+  public void testInherits3() {
     testSame("var a = {}; this.b = {}; var goog = {}; goog.inherits(b, a);");
   }
 
-  public void testInherits5() {
-    test("this.a = {}; var b = {}; b.inherits(a);",
-         "this.a = {}");
-  }
-
-  public void testInherits6() {
+  public void testInherits4() {
     test("this.a = {}; var b = {}; var goog = {}; goog.inherits(b, a);",
          "this.a = {}");
   }
 
-  public void testInherits7() {
-    testSame("var a = {}; this.b = {}; var goog = {};" +
-        " goog.inherits = function() {}; goog.inherits(b, a);");
-  }
-
-  public void testInherits8() {
-    // Make sure that exceptions aren't thrown if inherits() is used as
-    // an R-value
-    test("this.a = {}; var b = {}; var c = b.inherits(a);", "this.a = {};");
+  public void testInherits5() {
+    testSame(
+        LINE_JOINER.join(
+            "var a = {};",
+            "this.b = {};",
+            "var goog = {};",
+            "goog.inherits = function() {};",
+            "goog.inherits(b, a);"));
   }
 
   public void testMixin1() {
@@ -814,8 +816,12 @@ public final class NameAnalyzerTest extends CompilerTestCase {
     test("var foo = {};while(e)foo.bar=function(){};", "while(e);");
   }
 
-  public void testFor() {
+  public void testForIn() {
     test("var foo = {};for(e in x)foo.bar=function(){};", "for(e in x);");
+  }
+
+  public void testForOf() {
+    test("var foo = {};for(e of x)foo.bar=function(){};", "for(e of x);");
   }
 
   public void testDo() {
@@ -938,6 +944,32 @@ public final class NameAnalyzerTest extends CompilerTestCase {
 
   public void testSetterInForIn6() {
     testSame("var foo = {};for(e in foo);");
+  }
+
+  public void testSetterInForOf1() {
+    test("var foo = {}; var bar; for(e of bar = foo.a);",
+         "var foo = {}; for(e of foo.a);");
+  }
+
+  public void testSetterInForOf2() {
+    testSame("var foo = {}; var bar; for(e of bar = foo.a); bar");
+  }
+
+  public void testSetterInForOf3() {
+    testSame("var foo = {}; var bar; for(e of bar = foo.a); bar.b = 3");
+  }
+
+  public void testSetterInForOf4() {
+    testSame("var foo = {}; var bar; for (e of bar = foo.a); bar.b = 3; foo.a");
+  }
+
+  public void testSetterInForOf5() {
+    test("var foo = {}; var bar; for (e of foo.a) { bar = e } bar.b = 3; foo.a",
+         "var foo={};for(e of foo.a);foo.a");
+  }
+
+  public void testSetterInForOf6() {
+    testSame("var foo = {};for(e of foo);");
   }
 
   public void testSetterInIfPredicate() {

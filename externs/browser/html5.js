@@ -3722,9 +3722,7 @@ Document.prototype.msHidden;
  * @see http://w3c.github.io/webcomponents/spec/custom/#extensions-to-document-interface-to-register
  * @param {string} type
  * @param {{extends: (string|undefined), prototype: (Object|undefined)}=} options
- * @return {!Function} a constructor for the new tag. A generic function is the best we
- *     can do here as it allows the return value to be annotated properly
- *     at the call site.
+ * @return {!function(new:Element, ...*)} a constructor for the new tag.
  */
 Document.prototype.registerElement = function(type, options) {};
 
@@ -4146,6 +4144,13 @@ HTMLTemplateElement.prototype.content;
  * @see http://www.w3.org/TR/html-imports/#interface-import
  */
 HTMLLinkElement.prototype.import;
+
+/**
+ * @type {string}
+ * @see https://html.spec.whatwg.org/#attr-link-as
+ * @see https://w3c.github.io/preload/#as-attribute
+ */
+HTMLLinkElement.prototype.as;
 
 
 /**
@@ -4598,6 +4603,7 @@ function CustomElementRegistry() {}
  * @param {string} tagName
  * @param {!function(new:HTMLElement)} klass
  * @param {{extends: string}=} options
+ * @return {undefined}
  */
 CustomElementRegistry.prototype.define = function (tagName, klass, options) {};
 

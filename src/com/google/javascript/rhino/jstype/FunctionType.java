@@ -1026,7 +1026,7 @@ public class FunctionType extends PrototypeObjectType implements FunctionTypeI {
   StringBuilder appendTo(StringBuilder sb, boolean forAnnotations) {
     if (!isPrettyPrint() ||
         this == registry.getNativeType(JSTypeNative.FUNCTION_INSTANCE_TYPE)) {
-      return sb.append("Function");
+      return sb.append(forAnnotations ? "!Function" : "Function");
     }
 
     setPrettyPrint(false);
@@ -1544,7 +1544,10 @@ public class FunctionType extends PrototypeObjectType implements FunctionTypeI {
     return new FunctionBuilderImpl();
   }
 
-  /** Private implementation used by toBuilder. */
+  /**
+   * Private implementation used by toBuilder.  Note: we do not preserve any
+   * properties that may have been defined on the original function.
+   */
   private class FunctionBuilderImpl implements Builder {
     ArrowType arrow = FunctionType.this.call;
 
@@ -1575,12 +1578,14 @@ public class FunctionType extends PrototypeObjectType implements FunctionTypeI {
               getReferenceName(),
               source,
               arrow,
-              getInstanceType(),
-              null,
-              true,
-              false,
-              false);
-      result.setPrototypeBasedOn(getInstanceType());
+              typeOfThis,
+              templateTypeMap,
+              isConstructor(),
+              isNativeObjectType(),
+              isAbstract);
+      if (isConstructor()) {
+        result.setPrototypeBasedOn(getInstanceType());
+      }
       return result;
     }
   }

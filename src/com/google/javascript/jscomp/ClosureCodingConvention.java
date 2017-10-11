@@ -25,13 +25,13 @@ import com.google.errorprone.annotations.Immutable;
 import com.google.javascript.jscomp.newtypes.DeclaredTypeRegistry;
 import com.google.javascript.jscomp.newtypes.JSType;
 import com.google.javascript.jscomp.newtypes.QualifiedName;
-import com.google.javascript.jscomp.newtypes.RawNominalType;
+import com.google.javascript.rhino.FunctionTypeI;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.Node;
+import com.google.javascript.rhino.NominalTypeBuilder;
 import com.google.javascript.rhino.jstype.FunctionType;
 import com.google.javascript.rhino.jstype.JSTypeNative;
 import com.google.javascript.rhino.jstype.JSTypeRegistry;
-import com.google.javascript.rhino.jstype.ObjectType;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -72,22 +72,26 @@ public final class ClosureCodingConvention extends CodingConventions.Proxy {
    * subclass, and a {@code constructor} property.
    */
   @Override
-  public void applySubclassRelationship(FunctionType parentCtor,
-      FunctionType childCtor, SubclassType type) {
-    super.applySubclassRelationship(parentCtor, childCtor, type);
+  public void applySubclassRelationship(
+      final NominalTypeBuilder parent, final NominalTypeBuilder child, SubclassType type) {
+    super.applySubclassRelationship(parent, child, type);
     if (type == SubclassType.INHERITS) {
-      childCtor.defineDeclaredProperty("superClass_",
-          parentCtor.getPrototype(), childCtor.getSource());
-      childCtor.getPrototype().defineDeclaredProperty("constructor",
-          // Notice that constructor functions do not need to be covariant
-          // on the superclass.
-          // So if G extends F, new G() and new F() can accept completely
-          // different argument types, but G.prototype.constructor needs
-          // to be covariant on F.prototype.constructor.
-          // To get around this, we just turn off type-checking on arguments
-          // and return types of G.prototype.constructor.
-          (FunctionType) childCtor.toBuilder().withUnknownReturnType().withNoParameters().build(),
-          childCtor.getSource());
+      final FunctionTypeI childCtor = (FunctionTypeI) child.constructor().toTypeI();
+      child.beforeFreeze(new Runnable() {
+        @Override
+        public void run() {
+          child.constructor().declareProperty(
+              "superClass_", parent.prototype().toTypeI(), childCtor.getSource());
+        }
+      }, parent);
+      // Notice that constructor functions do not need to be covariant on the superclass.
+      // So if G extends F, new G() and new F() can accept completely different argument
+      // types, but G.prototype.constructor needs to be covariant on F.prototype.constructor.
+      // To get around this, we just turn off type-checking on arguments and return types
+      // of G.prototype.constructor.
+      FunctionTypeI qmarkCtor =
+          childCtor.toBuilder().withUnknownReturnType().withNoParameters().build();
+      child.prototype().declareProperty("constructor", qmarkCtor, childCtor.getSource());
     }
   }
 
@@ -111,18 +115,12 @@ public final class ClosureCodingConvention extends CodingConventions.Proxy {
       Node subclass = null;
       Node superclass = callNode.getLastChild();
 
-      // There are six possible syntaxes for a class-defining method:
-      // SubClass.inherits(SuperClass)
+      // There are four possible syntaxes for a class-defining method:
       // goog.inherits(SubClass, SuperClass)
       // goog$inherits(SubClass, SuperClass)
-      // SubClass.mixin(SuperClass.prototype)
       // goog.mixin(SubClass.prototype, SuperClass.prototype)
       // goog$mixin(SubClass.prototype, SuperClass.prototype)
-      boolean isDeprecatedCall = callNode.hasTwoChildren() && callName.isGetProp();
-      if (isDeprecatedCall) {
-        // SubClass.inherits(SuperClass)
-        subclass = callName.getFirstChild();
-      } else if (callNode.getChildCount() == 3) {
+      if (callNode.hasXChildren(3)) {
         // goog.inherits(SubClass, SuperClass)
         subclass = callName.getNext();
       } else {
@@ -135,13 +133,11 @@ public final class ClosureCodingConvention extends CodingConventions.Proxy {
         if (!endsWithPrototype(superclass)) {
           return null;
         }
-        if (!isDeprecatedCall) {
-          if (!endsWithPrototype(subclass)) {
-            return null;
-          }
-          // Strip off the prototype from the name.
-          subclass = subclass.getFirstChild();
+        if (!endsWithPrototype(subclass)) {
+          return null;
         }
+        // Strip off the prototype from the name.
+        subclass = subclass.getFirstChild();
         superclass = superclass.getFirstChild();
       }
 
@@ -149,9 +145,9 @@ public final class ClosureCodingConvention extends CodingConventions.Proxy {
       // isn't a real class name. This prevents us from
       // doing something weird in cases like:
       // goog.inherits(MySubClass, cond ? SuperClass1 : BaseClass2)
-      if (subclass != null &&
-          subclass.isUnscopedQualifiedName() &&
-          superclass.isUnscopedQualifiedName()) {
+      if (subclass != null
+          && subclass.isUnscopedQualifiedName()
+          && superclass.isUnscopedQualifiedName()) {
         return new SubclassRelationship(type, subclass, superclass);
       }
     }
@@ -323,19 +319,10 @@ public final class ClosureCodingConvention extends CodingConventions.Proxy {
   }
 
   @Override
-  public void applySingletonGetterOld(FunctionType functionType,
-      FunctionType getterType, ObjectType objectType) {
-    functionType.defineDeclaredProperty("getInstance", getterType,
-        functionType.getSource());
-    functionType.defineDeclaredProperty("instance_", objectType,
-        functionType.getSource());
-  }
-
-  @Override
-  public void applySingletonGetterNew(
-      RawNominalType rawType, JSType getInstanceType, JSType instanceType) {
-    rawType.addCtorProperty("getInstance", null, getInstanceType, true);
-    rawType.addCtorProperty("instance_", null, instanceType, true);
+  public void applySingletonGetter(NominalTypeBuilder classType, FunctionTypeI getterType) {
+    Node defSite = ((FunctionTypeI) classType.constructor().toTypeI()).getSource();
+    classType.constructor().declareProperty("getInstance", getterType, defSite);
+    classType.constructor().declareProperty("instance_", classType.instance().toTypeI(), defSite);
   }
 
   @Override

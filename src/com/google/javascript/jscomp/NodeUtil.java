@@ -474,7 +474,7 @@ public final class NodeUtil {
    * @return the node best representing the class's name
    */
   public static Node getNameNode(Node n) {
-    checkState(n.isFunction() || n.isClass());
+    checkState(n.isFunction() || n.isClass(), n);
     Node parent = n.getParent();
     switch (parent.getToken()) {
       case NAME:
@@ -568,7 +568,7 @@ public final class NodeUtil {
     //    (in which case NOT here should return true)
     // 2) We care that expression is a side-effect free and can't
     //    be side-effected by other expressions.
-    // This should only be used to say the value is immuable and
+    // This should only be used to say the value is immutable and
     // hasSideEffects and canBeSideEffected should be used for the other case.
 
     switch (n.getToken()) {
@@ -1028,6 +1028,13 @@ public final class NodeUtil {
     return initializer.isOr()
         && qnameNode.matchesQualifiedName(initializer.getFirstChild())
         && initializer.getLastChild().isObjectLit();
+  }
+
+  /** Determine if the given SCRIPT is a @typeSummary file, like an i.js file */
+  static boolean isFromTypeSummary(Node n) {
+    checkArgument(n.isScript());
+    JSDocInfo info = n.getJSDocInfo();
+    return info != null && info.isTypeSummary();
   }
 
   /**
@@ -2356,6 +2363,13 @@ public final class NodeUtil {
     return n != null && (n.isVar() || n.isLet() || n.isConst());
   }
 
+  static final Predicate<Node> isNameDeclaration = new Predicate<Node>() {
+    @Override
+    public boolean apply(Node n) {
+      return isNameDeclaration(n);
+    }
+  };
+
   /**
    * @param n The node
    * @return True if {@code n} is a VAR, LET or CONST that contains a
@@ -2416,11 +2430,11 @@ public final class NodeUtil {
     return n.isFunction() && !n.isArrowFunction();
   }
 
-  static boolean isEnhancedFor(Node n) {
+  public static boolean isEnhancedFor(Node n) {
     return n.isForOf() || n.isForIn();
   }
 
-  static boolean isAnyFor(Node n) {
+  public static boolean isAnyFor(Node n) {
     return n.isVanillaFor() || n.isForIn() || n.isForOf();
   }
 
@@ -2963,9 +2977,10 @@ public final class NodeUtil {
   public static boolean isHoistedFunctionDeclaration(Node n) {
     if (isFunctionDeclaration(n)) {
       Node parent = n.getParent();
-      // TODO(lharker): should return true if parent is an export. Doing so breaks other tests, so
-      // I'm moving it into future CLs.
-      return parent.isScript() || parent.isModuleBody() || parent.getParent().isFunction();
+      return parent.isScript()
+          || parent.isModuleBody()
+          || parent.getParent().isFunction()
+          || parent.isExport();
     }
     return false;
   }
@@ -3015,13 +3030,14 @@ public final class NodeUtil {
    * function f() {}
    * if (x); else function f() {}
    * for (;;) { function f() {} }
+   * export default function f() {}
    * </pre>
    *
    * @param n A node
    * @return Whether n is a function used within an expression.
    */
   static boolean isFunctionExpression(Node n) {
-    return n.isFunction() && !isStatement(n);
+    return n.isFunction() && (!isNamedFunction(n) || !isDeclarationParent(n.getParent()));
   }
 
   /**
@@ -3031,7 +3047,7 @@ public final class NodeUtil {
    * @return Whether n is a class used within an expression.
    */
   static boolean isClassExpression(Node n) {
-    return n.isClass() && !isStatement(n);
+    return n.isClass() && (!isNamedClass(n) || !isDeclarationParent(n.getParent()));
   }
 
   /**
@@ -3142,8 +3158,10 @@ public final class NodeUtil {
     return n.isGetProp() && n.matchesQualifiedName("goog.partial");
   }
 
-  // Does not use type info. For example, it returns false for f.bind(...)
-  // because it cannot know whether f is a function.
+  /**
+   * Does not use type info. For example, it returns false for f.bind(...)
+   * because it cannot know whether f is a function.
+   */
   static boolean isFunctionBind(Node expr) {
     if (!expr.isGetProp()) {
       return false;
@@ -3639,7 +3657,13 @@ public final class NodeUtil {
       AbstractCompiler compiler, String name, Node basisNode,
       String originalName) {
     Node node = newQName(compiler, name);
-    setDebugInformation(node, basisNode, originalName);
+    node.useSourceInfoWithoutLengthIfMissingFromForTree(basisNode);
+    if (!originalName.equals(node.getOriginalName())) {
+      // If basisNode already had the correct original name, then it will already be set correctly.
+      // Setting it again will force the QName node to have a different property list from all of
+      // its children, causing greater memory consumption.
+      node.setOriginalName(originalName);
+    }
     return node;
   }
 
@@ -3655,17 +3679,14 @@ public final class NodeUtil {
     }
   }
 
-  /**
-   * Sets the debug information (source file info and original name) on the given node.
-   *
-   * @param node The node on which to set the debug information.
-   * @param basisNode The basis node from which to copy the source file info.
-   * @param originalName The original name of the node.
-   */
-  @Deprecated
-  static void setDebugInformation(Node node, Node basisNode, String originalName) {
-    node.useSourceInfoWithoutLengthIfMissingFromForTree(basisNode);
-    node.setOriginalName(originalName);
+  static int getLengthOfQname(Node qname) {
+    int result = 1;
+    while (qname.isGetProp() || qname.isGetElem()) {
+      result++;
+      qname = qname.getFirstChild();
+    }
+    checkState(qname.isName());
+    return result;
   }
 
   private static Node newName(AbstractCompiler compiler, String name) {
@@ -4765,7 +4786,7 @@ public final class NodeUtil {
     return null;
   }
 
-  /** Gets the r-value (or intializer) of a node returned by getBestLValue. */
+  /** Gets the r-value (or initializer) of a node returned by getBestLValue. */
   static Node getRValueOfLValue(Node n) {
     Node parent = n.getParent();
     switch (parent.getToken()) {

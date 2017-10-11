@@ -272,11 +272,10 @@ public class Compiler extends AbstractCompiler implements ErrorHandler, SourceFi
 
   private static final Joiner pathJoiner = Joiner.on(File.separator);
 
-  // TODO(johnlenz): remove "currentScope".
   // Used as a shortcut for change tracking.  This is the current scope being
   // visited by the "current" NodeTraversal.  This can't be thread safe so
-  // we should move it into the NodeTraversal and require explicit changed
-  // nodes elsewhere so we aren't blocked from doing this elsewhere.
+  // we will remove it when we remove the reportCodeChange() method.
+  @Deprecated
   private Node currentChangeScope = null;
 
   // Starts at 0, increases as "interesting" things happen.
@@ -1043,6 +1042,9 @@ public class Compiler extends AbstractCompiler implements ErrorHandler, SourceFi
     Tracer t = newTracer("runTranspileOnlyPasses");
     try {
       for (PassFactory pf : getPassConfig().getTranspileOnlyPasses()) {
+        if (hasErrors()) {
+          return;
+        }
         pf.create(this).process(externsRoot, jsRoot);
       }
     } finally {
@@ -1830,7 +1832,12 @@ public class Compiler extends AbstractCompiler implements ErrorHandler, SourceFi
           NodeTraversal.traverseEs6(this, n, sia);
         }
 
-        jsRoot.addChildToBack(n);
+        if (NodeUtil.isFromTypeSummary(n)) {
+          input.setIsExtern(true);
+          externsRoot.addChildToBack(n);
+        } else {
+          jsRoot.addChildToBack(n);
+        }
       }
 
       if (hasErrors()) {
@@ -1883,10 +1890,6 @@ public class Compiler extends AbstractCompiler implements ErrorHandler, SourceFi
       }
     }
 
-    if (options.allowIjsInputs()) {
-      hoistIjsFiles();
-    }
-
     hoistNoCompileFiles();
 
     if (staleInputs) {
@@ -1919,21 +1922,6 @@ public class Compiler extends AbstractCompiler implements ErrorHandler, SourceFi
   }
 
   /**
-   * Hoists inputs with the @typeSummary annotation into the externs list.
-   */
-  void hoistIjsFiles() {
-    boolean staleInputs = false;
-    for (CompilerInput input : inputs) {
-      if (hoistIfTypeSummary(input)) {
-        staleInputs = true;
-      }
-    }
-    if (staleInputs) {
-      repartitionInputs();
-    }
-  }
-
-  /**
    * Hoists a compiler input to externs if it contains the @externs annotation.
    * Return whether or not the given input was hoisted.
    */
@@ -1949,29 +1937,6 @@ public class Compiler extends AbstractCompiler implements ErrorHandler, SourceFi
     if (info != null && info.isExterns()) {
       // If the input file is explicitly marked as an externs file, then move it out of the main
       // JS root and put it with the other externs.
-      externsRoot.addChildToBack(n);
-      input.setIsExtern(true);
-
-      input.getModule().remove(input);
-
-      externs.add(input);
-      return true;
-    }
-    return false;
-  }
-
-  private boolean hoistIfTypeSummary(CompilerInput input) {
-    Node n = input.getAstRoot(this);
-
-    // Inputs can have a null AST on a parse error.
-    if (n == null) {
-      return false;
-    }
-
-    JSDocInfo info = n.getJSDocInfo();
-    if (info != null && info.isTypeSummary()) {
-      // If the input file is explicitly marked as a @typeSummary, then it should be treated as
-      // an extern file.
       externsRoot.addChildToBack(n);
       input.setIsExtern(true);
 
@@ -2366,7 +2331,8 @@ public class Compiler extends AbstractCompiler implements ErrorHandler, SourceFi
     builder.setCompilerOptions(options);
     builder.setSourceMap(sourceMap);
     builder.setTagAsExterns(firstOutput && n.isFromExterns());
-    builder.setTagAsTypeSummary(firstOutput && !n.isFromExterns() && options.shouldGenerateTypedExterns());
+    builder.setTagAsTypeSummary(
+        firstOutput && !n.isFromExterns() && options.shouldGenerateTypedExterns());
     builder.setTagAsStrict(firstOutput && options.shouldEmitUseStrict());
     return builder.build();
   }
@@ -2586,6 +2552,7 @@ public class Compiler extends AbstractCompiler implements ErrorHandler, SourceFi
   }
 
   @Override
+  @Deprecated
   void setChangeScope(Node newChangeScopeRoot) {
     currentChangeScope = newChangeScopeRoot;
   }
@@ -3653,6 +3620,9 @@ public class Compiler extends AbstractCompiler implements ErrorHandler, SourceFi
       for (CompilerInput input : module.getInputs()) {
         input.reset();
       }
+    }
+    for (CompilerInput input : this.externs) {
+      input.reset();
     }
   }
 }
